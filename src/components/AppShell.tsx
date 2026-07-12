@@ -18,7 +18,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { fullscreen } = usePlayer();
 
   if (pathname === "/player") {
-    return <div className="h-full min-h-0 flex-1">{children}</div>;
+    return (
+      <>
+        <WindowChrome />
+        <div className="h-full min-h-0 flex-1">{children}</div>
+      </>
+    );
   }
 
   return (

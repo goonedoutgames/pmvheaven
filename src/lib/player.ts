@@ -79,6 +79,8 @@ export async function openPlayerWindow() {
         minWidth: 480,
         minHeight: 320,
         resizable: true,
+        // Use our custom titlebar (WindowChrome), like the main window.
+        decorations: false,
       });
     } catch {
       /* ignore */

@@ -1,3 +1,1 @@
-This directory is populated by `pnpm desktop:prepare` with the Next.js
-standalone server before a Tauri release build. This placeholder keeps the
-Tauri `resources` glob valid for dev builds.
+Populated by pnpm desktop:prepare.

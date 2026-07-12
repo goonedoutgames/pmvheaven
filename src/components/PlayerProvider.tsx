@@ -239,16 +239,14 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       }
       setSeparateWindowState(v);
 
-      // Migrate whatever is currently playing to the new destination.
+      // Migrate whatever is currently playing to the new destination, resuming
+      // at the *live* playback position (not where the clip was first loaded).
       if (v) {
         if (video) {
-          const np: NowPlaying = { video, at: startAt };
+          const at = currentTimeRef.current || startAt;
+          const np: NowPlaying = { video, at };
           writeNowPlaying(np);
-          channelRef.current?.postMessage({
-            type: "play",
-            video,
-            at: startAt,
-          } as PlayerMessage);
+          channelRef.current?.postMessage({ type: "play", video, at } as PlayerMessage);
           setRemoteActive(true);
           void openPlayerWindow();
           applyLocal(null);

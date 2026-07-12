@@ -92,7 +92,9 @@ body {
 
 /* Hide the native fullscreen control on the main player — we provide our own
    (WebKitGTK's native video fullscreen renders black on this setup). */
-.player-video::-webkit-media-controls-fullscreen-button {
+.player-video::-webkit-media-controls-fullscreen-button,
+.player-video::-webkit-media-controls-picture-in-picture-button,
+video::-webkit-media-controls-fullscreen-button {
   display: none !important;
 }
 

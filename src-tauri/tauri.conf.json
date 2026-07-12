@@ -14,8 +14,8 @@
       {
         "title": "PMVHeaven",
         "url": "http://localhost:3000",
-        "width": 1440,
-        "height": 900,
+        "width": 1920,
+        "height": 1080,
         "minWidth": 900,
         "minHeight": 600,
         "resizable": true,
@@ -29,7 +29,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["appimage"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

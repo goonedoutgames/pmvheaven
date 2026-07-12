@@ -38,7 +38,10 @@ export function attachStream(
   const playProgressive = () => {
     hls?.destroy();
     hls = null;
-    el.src = progressiveSrc;
+    // Media-fragment hint (#t=) lets the engine seek toward the resume point via
+    // byte-range instead of buffering from the start.
+    el.src = startAt > 1 ? `${progressiveSrc}#t=${Math.floor(startAt)}` : progressiveSrc;
+    el.preload = "auto";
     applyResume();
     void el.play?.().catch(() => {});
   };

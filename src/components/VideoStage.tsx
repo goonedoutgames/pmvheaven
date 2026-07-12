@@ -49,6 +49,16 @@ export function VideoStage({
     if (!el || !video) return;
     counted.current = false;
 
+    // Suppress native fullscreen/PiP/download affordances (WebKitGTK renders a
+    // fullscreen button that black-screens). We provide our own.
+    el.setAttribute("controlsList", "nofullscreen nodownload noremoteplayback");
+    try {
+      (el as HTMLVideoElement & { disablePictureInPicture: boolean }).disablePictureInPicture =
+        true;
+    } catch {
+      /* ignore */
+    }
+
     const detach = attachStream(el, video, startAt);
     void el.play?.().catch(() => {});
 
@@ -92,6 +102,27 @@ export function VideoStage({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [video?.id]);
+
+  // Safety net: if anything triggers *native* element fullscreen (which renders
+  // black on WebKitGTK), bail out of it and use our in-flow fullscreen instead.
+  const fullscreenRef = useRef(fullscreen);
+  fullscreenRef.current = fullscreen;
+  useEffect(() => {
+    const onNativeFs = () => {
+      const doc = document as Document & { webkitFullscreenElement?: Element | null };
+      const fsEl = document.fullscreenElement ?? doc.webkitFullscreenElement ?? null;
+      if (fsEl && fsEl === videoRef.current) {
+        void document.exitFullscreen?.().catch(() => {});
+        if (!fullscreenRef.current) toggleFullscreen();
+      }
+    };
+    document.addEventListener("fullscreenchange", onNativeFs);
+    document.addEventListener("webkitfullscreenchange", onNativeFs as EventListener);
+    return () => {
+      document.removeEventListener("fullscreenchange", onNativeFs);
+      document.removeEventListener("webkitfullscreenchange", onNativeFs as EventListener);
+    };
+  }, [toggleFullscreen]);
 
   if (!video) return null;
 
