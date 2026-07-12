@@ -9,6 +9,8 @@
   --muted: #9797a6;
   --accent: #f43f5e;
   --accent-2: #a855f7;
+  /* Height of the custom desktop titlebar; 0 in the browser, set by WindowChrome. */
+  --titlebar-h: 0px;
 }
 
 @theme inline {
@@ -28,10 +30,36 @@ html {
   color-scheme: dark;
 }
 
+html,
+body {
+  height: 100%;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-geist-sans), system-ui, sans-serif;
+  /* The app fills the window and lays out as a column below the fixed desktop
+     titlebar. Content scrolls inside .app-scroll (not the document), so the
+     scrollbar doesn't run up behind the custom window controls. */
+  height: 100dvh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding-top: var(--titlebar-h);
+}
+
+.app-scroll {
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+}
+
+/* Elements marked as a Tauri drag region should show the move cursor and not
+   let text selection interfere with window dragging. */
+[data-tauri-drag-region] {
+  cursor: default;
+  user-select: none;
 }
 
 /* Thin, subtle scrollbars that match the dark theme. */
@@ -60,6 +88,12 @@ body {
 }
 .animate-fade-in {
   animation: fade-in 0.3s ease both;
+}
+
+/* Hide the native fullscreen control on the main player — we provide our own
+   (WebKitGTK's native video fullscreen renders black on this setup). */
+.player-video::-webkit-media-controls-fullscreen-button {
+  display: none !important;
 }
 
 /* Clamp helpers for card titles. */

@@ -49,6 +49,12 @@ export function NavBar() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  // The app scrolls inside .app-scroll, not the document, so Next's default
+  // scroll-to-top on navigation doesn't fire — reset it ourselves.
+  useEffect(() => {
+    document.querySelector(".app-scroll")?.scrollTo({ top: 0 });
+  }, [pathname]);
+
   const submitSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (q.trim()) router.push(`/search?q=${encodeURIComponent(q.trim())}`);

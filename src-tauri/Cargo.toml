@@ -15,6 +15,11 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = [] }
 
+# Enable MediaSource (needed by hls.js) on the Linux WebKitGTK webview. Version
+# and feature pinned to match wry's own webkit2gtk dependency.
+[target.'cfg(target_os = "linux")'.dependencies]
+webkit2gtk = { version = "=2.0.2", features = ["v2_40"] }
+
 [profile.release]
 codegen-units = 1
 lto = true

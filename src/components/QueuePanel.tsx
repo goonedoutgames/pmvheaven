@@ -3,17 +3,25 @@
 import { useRouter } from "next/navigation";
 import { ChevronDown, ChevronUp, ListVideo, Play, Trash2, X } from "lucide-react";
 import { useQueue } from "./QueueProvider";
+import { usePlayer, type MiniVideo } from "./PlayerProvider";
 import { formatDuration } from "@/lib/format";
 
 export function QueuePanel() {
   const { queue, isOpen, setOpen, remove, move, clear, consumeTo } = useQueue();
+  const { play } = usePlayer();
   const router = useRouter();
 
-  const playFrom = (id: string) => {
-    // Consume everything up to and including the chosen item, then play it.
+  const playFrom = async (id: string) => {
+    // Consume everything up to and including the chosen item, then play it in
+    // the persistent player (rail / separate window), without leaving the page.
     const target = consumeTo(id);
-    if (target) {
-      setOpen(false);
+    if (!target) return;
+    setOpen(false);
+    try {
+      const res = await fetch(`/api/video/${target.id}`, { cache: "no-store" });
+      if (!res.ok) throw new Error();
+      play((await res.json()) as MiniVideo, 0);
+    } catch {
       router.push(`/watch/${target.id}`);
     }
   };
@@ -26,7 +34,10 @@ export function QueuePanel() {
         className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm"
         onClick={() => setOpen(false)}
       />
-      <aside className="fixed right-0 top-0 z-[70] flex h-full w-full max-w-md flex-col border-l border-border bg-surface shadow-2xl animate-fade-in">
+      <aside
+        className="fixed right-0 z-[70] flex w-full max-w-md flex-col border-l border-border bg-surface shadow-2xl animate-fade-in"
+        style={{ top: "var(--titlebar-h)", height: "calc(100% - var(--titlebar-h))" }}
+      >
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
           <h2 className="flex items-center gap-2 text-lg font-bold">
             <ListVideo size={20} /> Queue

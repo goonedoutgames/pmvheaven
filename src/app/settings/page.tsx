@@ -3,28 +3,63 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import Link from "next/link";
-import { Database, LogOut, RefreshCw } from "lucide-react";
+import { Database, LogOut, MonitorPlay, RefreshCw } from "lucide-react";
 import { useSession } from "@/components/SessionProvider";
+import { usePlayer } from "@/components/PlayerProvider";
 import { GridSkeleton } from "@/components/VideoGrid";
 
 export default function SettingsPage() {
   const router = useRouter();
   const { authenticated, loading, user, historyCount, lastSync, syncing, refresh } =
     useSession();
+  const { separateWindow, setSeparateWindow } = usePlayer();
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
   if (loading) return <GridSkeleton count={4} />;
 
+  const playbackSection = (
+    <section className="flex flex-col gap-4 rounded-2xl border border-border bg-surface p-5">
+      <div className="flex items-center gap-2 font-semibold">
+        <MonitorPlay size={18} /> Playback
+      </div>
+      <label className="flex cursor-pointer items-start justify-between gap-4">
+        <div>
+          <p className="text-sm font-medium">Play videos in a separate window</p>
+          <p className="text-xs text-muted">
+            Streams open in their own window so browsing, queuing and navigation
+            stay completely independent of what&apos;s playing. When off, the
+            player docks into a side rail and the app makes room for it.
+          </p>
+        </div>
+        <button
+          role="switch"
+          aria-checked={separateWindow}
+          onClick={() => setSeparateWindow(!separateWindow)}
+          className={`relative mt-1 h-6 w-11 shrink-0 rounded-full transition ${
+            separateWindow ? "bg-accent" : "bg-surface-2"
+          }`}
+        >
+          <span
+            className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all ${
+              separateWindow ? "left-[22px]" : "left-0.5"
+            }`}
+          />
+        </button>
+      </label>
+    </section>
+  );
+
   if (!authenticated) {
     return (
-      <div className="py-24 text-center">
-        <h1 className="text-2xl font-bold">Settings</h1>
-        <p className="mt-3 text-muted">
+      <div className="mx-auto flex max-w-2xl flex-col gap-6 py-4">
+        <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
+        {playbackSection}
+        <p className="text-muted">
           <Link href="/login" className="text-accent underline">
             Sign in
           </Link>{" "}
-          to manage your account.
+          to manage your account and sync history.
         </p>
       </div>
     );
@@ -114,6 +149,8 @@ export default function SettingsPage() {
         </button>
         {msg && <p className="text-sm text-muted">{msg}</p>}
       </section>
+
+      {playbackSection}
 
       <button
         onClick={logout}

@@ -66,6 +66,22 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
     }
   }, [queue, loaded]);
 
+  // Keep the queue in sync when another window (e.g. the separate player window)
+  // changes it.
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === STORAGE_KEY) {
+        try {
+          setQueue(e.newValue ? JSON.parse(e.newValue) : []);
+        } catch {
+          /* ignore */
+        }
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
   const add = useCallback((video: VideoSummary) => {
     setQueue((q) => (q.some((v) => v.id === video.id) ? q : [...q, video]));
   }, []);

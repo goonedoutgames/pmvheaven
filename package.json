@@ -13,6 +13,7 @@
     "desktop:build": "tauri build"
   },
   "dependencies": {
+    "@tauri-apps/api": "^2.11.1",
     "better-sqlite3": "^12.11.1",
     "hls.js": "^1.6.16",
     "lucide-react": "^1.24.0",

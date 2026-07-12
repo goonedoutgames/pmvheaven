@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { Eye, Music, Star, ThumbsUp } from "lucide-react";
 import { getRelated, getVideo } from "@/lib/pmvhaven";
 import { cacheVideo, cacheVideos } from "@/lib/repo";
-import { Player } from "@/components/Player";
+import { WatchAutoplay } from "@/components/WatchAutoplay";
 import { WatchActions } from "@/components/WatchActions";
 import { QueueButtonLabeled } from "@/components/QueueButton";
 import { VideoCard } from "@/components/VideoCard";
@@ -34,7 +34,7 @@ export default async function WatchPage({
   return (
     <div className="flex flex-col gap-6 lg:flex-row">
       <div className="flex min-w-0 flex-1 flex-col gap-4">
-        <Player video={video} />
+        <WatchAutoplay video={video} />
 
         <div className="flex flex-col gap-3">
           <h1 className="text-xl font-bold leading-tight sm:text-2xl">{video.title}</h1>

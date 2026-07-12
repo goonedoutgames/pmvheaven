@@ -6,6 +6,8 @@ import { Eye, Star } from "lucide-react";
 import type { VideoSummary } from "@/lib/types";
 import { formatDuration, formatViews, ratingColor, timeAgo } from "@/lib/format";
 import { QueueButton } from "./QueueButton";
+import { usePlayer } from "./PlayerProvider";
+import { usePlayChoice } from "./PlayChoiceProvider";
 
 export function VideoCard({
   video,
@@ -16,6 +18,19 @@ export function VideoCard({
 }) {
   const [hover, setHover] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const { video: playing, remoteActive } = usePlayer();
+  const { request } = usePlayChoice();
+
+  // If a different video is already playing, clicking a card is ambiguous — ask
+  // whether to play it over the current one or add it to the queue, so we never
+  // silently interrupt playback or navigate away unexpectedly.
+  const onCardClick = (e: React.MouseEvent) => {
+    const busy = (!!playing && playing.id !== video.id) || remoteActive;
+    if (busy) {
+      e.preventDefault();
+      request(video);
+    }
+  };
 
   const onEnter = () => {
     setHover(true);
@@ -34,6 +49,7 @@ export function VideoCard({
     <Link
       href={`/watch/${video.id}`}
       className="group flex flex-col gap-2 animate-fade-in"
+      onClick={onCardClick}
       onMouseEnter={onEnter}
       onMouseLeave={onLeave}
     >

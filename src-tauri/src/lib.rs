@@ -29,6 +29,31 @@ fn wait_for_port(addr: &str, timeout: Duration) -> bool {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // WebKitGTK's native-Wayland path is broken on many GPU/driver combos. Two
+    // independent things go wrong, so both need addressing (this keeps HARDWARE
+    // acceleration — we never enable the software `WEBKIT_DISABLE_COMPOSITING_MODE`):
+    //
+    //  1. GDK_BACKEND=x11 — run the window under XWayland. Native-Wayland
+    //     accelerated compositing renders blank/white here, and client-side
+    //     titlebar buttons don't respond; XWayland gives working accelerated
+    //     compositing and server-side (WM-drawn) decorations.
+    //  2. WEBKIT_DISABLE_DMABUF_RENDERER=1 — WebKit's GPU process opens its own
+    //     Wayland connection for zero-copy DMABUF buffers and crashes with
+    //     "Error 71 (Protocol error) dispatching to Wayland display". Disabling
+    //     DMABUF uses the (still GPU-accelerated) texture-upload path instead.
+    //
+    // Both respect an explicit value, so users on working setups can opt out
+    // (e.g. `GDK_BACKEND=wayland`).
+    #[cfg(target_os = "linux")]
+    {
+        if std::env::var_os("GDK_BACKEND").is_none() {
+            std::env::set_var("GDK_BACKEND", "x11");
+        }
+        if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
+            std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+        }
+    }
+
     tauri::Builder::default()
         .manage(ServerProc(Mutex::new(None)))
         .setup(|app| {
@@ -72,6 +97,22 @@ pub fn run() {
                         eprintln!("Failed to start Next.js server: {err}");
                     }
                 }
+            }
+
+            // WebKitGTK ships with MediaSource (MSE) disabled by default, which
+            // breaks hls.js. Enable it (plus the web inspector) directly on the
+            // underlying WebKitWebView.
+            #[cfg(target_os = "linux")]
+            {
+                use webkit2gtk::{SettingsExt, WebViewExt};
+                let _ = window.with_webview(|webview| {
+                    let wv = webview.inner();
+                    if let Some(settings) = WebViewExt::settings(&wv) {
+                        settings.set_enable_mediasource(true);
+                        settings.set_enable_developer_extras(true);
+                        settings.set_media_playback_requires_user_gesture(false);
+                    }
+                });
             }
 
             let _ = window.show();
