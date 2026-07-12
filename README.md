@@ -14,8 +14,13 @@ your **watch history into a local SQLite database** so it is kept **permanently*
   (PMVHaven's CDN sends no CORS headers), with resume-from-position and quality
   switching. Progressive MP4 fallback.
 - **Permanent watch history** — on connect, the app snapshots your retained
-  history into SQLite and keeps syncing. Nothing is ever pruned locally.
+  history into SQLite and keeps syncing, with live per-phase progress. Nothing
+  is ever pruned locally, so it grows past PMVHaven's rolling limit over time.
+- **Play queue** — a Spotify-style ephemeral queue: *Add to queue* / *Play next*
+  from any card or the watch page, reorder in a slide-over panel, and each video
+  autoplays the next one when it ends.
 - **Favorites & Watch Later** — mirrored locally and written back to PMVHaven.
+- **Desktop app** — ships as a native window via Tauri (Rust + system WebView).
 - **No ads.**
 
 ## How it works

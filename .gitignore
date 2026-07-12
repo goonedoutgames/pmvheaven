@@ -13,6 +13,8 @@
 # testing
 /coverage
 
+# credentials
+credentials.tmp.conf
 # next.js
 /.next/
 /out/

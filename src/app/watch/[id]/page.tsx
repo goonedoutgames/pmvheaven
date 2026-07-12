@@ -5,6 +5,7 @@ import { getRelated, getVideo } from "@/lib/pmvhaven";
 import { cacheVideo, cacheVideos } from "@/lib/repo";
 import { Player } from "@/components/Player";
 import { WatchActions } from "@/components/WatchActions";
+import { QueueButtonLabeled } from "@/components/QueueButton";
 import { VideoCard } from "@/components/VideoCard";
 import { formatViews, ratingColor, timeAgo } from "@/lib/format";
 import type { VideoDetail, VideoSummary } from "@/lib/types";
@@ -75,7 +76,10 @@ export default async function WatchPage({
                 <p className="text-xs text-muted">Creator</p>
               </div>
             </Link>
-            <WatchActions video={video} />
+            <div className="flex flex-wrap items-center gap-2">
+              <QueueButtonLabeled video={video} />
+              <WatchActions video={video} />
+            </div>
           </div>
 
           {video.description && (

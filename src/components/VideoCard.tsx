@@ -5,6 +5,7 @@ import { useRef, useState } from "react";
 import { Eye, Star } from "lucide-react";
 import type { VideoSummary } from "@/lib/types";
 import { formatDuration, formatViews, ratingColor, timeAgo } from "@/lib/format";
+import { QueueButton } from "./QueueButton";
 
 export function VideoCard({
   video,
@@ -63,6 +64,10 @@ export function VideoCard({
         <span className="absolute bottom-1.5 right-1.5 rounded bg-black/80 px-1.5 py-0.5 text-xs font-medium tabular-nums">
           {video.duration || formatDuration(video.durationSeconds)}
         </span>
+
+        <div className="absolute right-1.5 top-1.5 opacity-0 transition group-hover:opacity-100">
+          <QueueButton video={video} />
+        </div>
 
         {video.rating > 0 && (
           <span

@@ -32,13 +32,13 @@ export default function SettingsPage() {
 
   const resync = async () => {
     setBusy(true);
-    setMsg("Running full resync…");
+    setMsg("Syncing history…");
     try {
-      const res = await fetch("/api/history/sync?full=1", { method: "POST" });
+      const res = await fetch("/api/history/sync", { method: "POST" });
       const data = await res.json();
       setMsg(
         data.status === "ok"
-          ? `Imported ${data.newCount} new videos (${data.seenCount} already saved).`
+          ? `Imported ${data.newCount} new (${data.seenCount} already saved). PMVHaven retains ${data.totalRetained?.toLocaleString?.() ?? data.totalRetained} total.`
           : (data.message ?? "Sync failed"),
       );
     } catch {
@@ -110,7 +110,7 @@ export default function SettingsPage() {
           className="flex w-fit items-center gap-2 rounded-lg border border-border bg-background px-4 py-2 text-sm font-medium transition hover:bg-surface-2 disabled:opacity-60"
         >
           <RefreshCw size={15} className={busy || syncing ? "animate-spin" : ""} />
-          Full resync now
+          Sync history now
         </button>
         {msg && <p className="text-sm text-muted">{msg}</p>}
       </section>

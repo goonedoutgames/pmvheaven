@@ -25,8 +25,8 @@ export async function POST(req: NextRequest) {
 
   await createAppSession();
 
-  // Kick off an initial full history snapshot in the background.
-  void syncWatchHistory(true).catch(() => {});
+  // Kick off an initial history snapshot in the background.
+  void syncWatchHistory().catch(() => {});
 
   return NextResponse.json({ ok: true, user: result.user });
 }

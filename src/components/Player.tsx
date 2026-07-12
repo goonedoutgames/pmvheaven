@@ -1,14 +1,18 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 import Hls from "hls.js";
 import type { VideoDetail } from "@/lib/types";
 import { streamProxyUrl } from "@/lib/format";
+import { useQueue } from "./QueueProvider";
 
 export function Player({ video }: { video: VideoDetail }) {
   const ref = useRef<HTMLVideoElement>(null);
   const lastReport = useRef(0);
   const counted = useRef(false);
+  const router = useRouter();
+  const { shift } = useQueue();
 
   const useHls = video.hlsEnabled && !!video.hlsMasterPlaylistUrl;
   const src = streamProxyUrl(
@@ -69,12 +73,21 @@ export function Player({ video }: { video: VideoDetail }) {
       if (el.duration) report(el.currentTime / el.duration, false);
     };
 
+    // Autoplay the next queued video when this one finishes.
+    const onEnded = () => {
+      report(1, false);
+      const next = shift();
+      if (next) router.push(`/watch/${next.id}`);
+    };
+
     el.addEventListener("timeupdate", onTime);
     el.addEventListener("pause", onPause);
+    el.addEventListener("ended", onEnded);
 
     return () => {
       el.removeEventListener("timeupdate", onTime);
       el.removeEventListener("pause", onPause);
+      el.removeEventListener("ended", onEnded);
       if (el.duration && el.currentTime > 0) {
         report(el.currentTime / el.duration, false);
       }

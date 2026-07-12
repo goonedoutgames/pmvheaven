@@ -6,7 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "tauri": "tauri",
+    "desktop:dev": "tauri dev",
+    "desktop:prepare": "next build && node scripts/prepare-desktop.mjs",
+    "desktop:build": "tauri build"
   },
   "dependencies": {
     "better-sqlite3": "^12.11.1",
@@ -19,6 +23,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@tauri-apps/cli": "^2.11.4",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^20",
     "@types/react": "^19",

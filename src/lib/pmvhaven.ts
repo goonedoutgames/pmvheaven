@@ -4,7 +4,6 @@ import { decrypt, encrypt } from "./crypto";
 import type {
   AccountUser,
   FeedParams,
-  HistoryEntry,
   Paged,
   Pagination,
   PopularTag,
@@ -444,27 +443,71 @@ export async function search(
   };
 }
 
-interface RawHistoryResponse {
-  data?: Array<{ video: RawVideo; watchedAt?: string; progress?: number }>;
-  pagination?: Record<string, unknown>;
+export interface RemoteHistoryEntry {
+  videoId: string;
+  watchedAt: string;
+  progress: number; // 0..1 fraction
 }
 
-export async function getWatchHistory(page = 1, limit = 50): Promise<Paged<HistoryEntry>> {
-  const r = await request<RawHistoryResponse>("/user/watch-history", {
-    auth: true,
-    query: { page, limit },
-  });
-  const entries = arr<{ video: RawVideo; watchedAt?: string; progress?: number }>(
-    r.data,
-  ).map((row) => ({
-    video: normalizeSummary(row.video),
-    watchedAt: str(row.watchedAt) || new Date().toISOString(),
-    progress: num(row.progress),
-  }));
-  return {
-    items: entries,
-    pagination: normalizePagination(r.pagination, entries.length),
-  };
+export interface RemoteHistory {
+  totalRetained: number; // watchHistoryCount reported by PMVHaven
+  entries: RemoteHistoryEntry[]; // most-recent window (free tier caps at ~500)
+}
+
+interface SessionUserHistory {
+  user?: {
+    watchHistory?: Array<{ videoId: string; watchedAt?: string }>;
+    watchProgress?: Array<{ videoId: string; progress?: number; duration?: number }>;
+    watchHistoryCount?: number;
+  } | null;
+}
+
+/**
+ * PMVHaven's documented `/user/watch-history` endpoint is broken server-side
+ * (500: "$slice path collision"). The watch history is instead embedded in the
+ * user object returned by `/auth/session`: `watchHistory` [{videoId, watchedAt}]
+ * plus `watchProgress` [{videoId, progress(seconds), duration}]. Free accounts
+ * only expose the most recent ~500 entries (of `watchHistoryCount` total).
+ */
+export async function fetchRemoteHistory(): Promise<RemoteHistory> {
+  const data = await request<SessionUserHistory>("/auth/session", { auth: true });
+  const u = data.user;
+  if (!u) return { totalRetained: 0, entries: [] };
+
+  const progressByVideo = new Map<string, number>();
+  for (const p of u.watchProgress ?? []) {
+    if (!p.videoId) continue;
+    const dur = num(p.duration);
+    const secs = num(p.progress);
+    const fraction = dur > 0 ? Math.min(1, Math.max(0, secs / dur)) : 0;
+    progressByVideo.set(p.videoId, fraction);
+  }
+
+  const entries: RemoteHistoryEntry[] = (u.watchHistory ?? [])
+    .filter((h) => h.videoId)
+    .map((h) => ({
+      videoId: h.videoId,
+      watchedAt: str(h.watchedAt) || new Date().toISOString(),
+      progress: progressByVideo.get(h.videoId) ?? 0,
+    }));
+
+  return { totalRetained: num(u.watchHistoryCount, entries.length), entries };
+}
+
+/** Hydrate a list of video IDs into summaries via the public bulk endpoint. */
+export async function getVideosBulk(ids: string[]): Promise<VideoSummary[]> {
+  const out: VideoSummary[] = [];
+  const CHUNK = 100;
+  for (let i = 0; i < ids.length; i += CHUNK) {
+    const chunk = ids.slice(i, i + CHUNK);
+    if (!chunk.length) continue;
+    const r = await request<{ data?: RawVideo[]; videos?: RawVideo[] }>(
+      "/videos/bulk",
+      { query: { ids: chunk.join(",") } },
+    );
+    out.push(...pickList(r).map(normalizeSummary));
+  }
+  return out;
 }
 
 export async function getRemoteFavorites(limit = 100): Promise<VideoSummary[]> {

@@ -9,12 +9,14 @@ import {
   Heart,
   History,
   Home,
+  ListVideo,
   LogIn,
   Search,
   Settings,
   Sparkles,
 } from "lucide-react";
 import { useSession } from "./SessionProvider";
+import { useQueue } from "./QueueProvider";
 
 const NAV = [
   { href: "/", label: "Home", icon: Home },
@@ -30,6 +32,7 @@ const AUTH_NAV = [
 
 export function NavBar() {
   const { authenticated, user, loading } = useSession();
+  const { queue, toggle } = useQueue();
   const pathname = usePathname();
   const router = useRouter();
   const [q, setQ] = useState("");
@@ -96,6 +99,19 @@ export function NavBar() {
             className="w-full rounded-full border border-border bg-surface py-2 pl-9 pr-4 text-sm outline-none transition focus:border-accent/60"
           />
         </form>
+
+        <button
+          onClick={toggle}
+          title="Queue"
+          className="relative shrink-0 rounded-lg p-2 text-muted transition hover:bg-surface hover:text-foreground"
+        >
+          <ListVideo size={20} />
+          {queue.length > 0 && (
+            <span className="absolute -right-0.5 -top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-accent px-1 text-[10px] font-bold text-white">
+              {queue.length}
+            </span>
+          )}
+        </button>
 
         {loading ? (
           <div className="h-8 w-8 animate-pulse rounded-full bg-surface-2" />

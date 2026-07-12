@@ -1,0 +1,9 @@
+# Rust build artifacts
+/target/
+
+# Tauri generated schemas
+/gen/
+
+# Assembled Next.js standalone server (produced by pnpm desktop:prepare)
+/server/*
+!/server/.keep

@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { SessionProvider } from "@/components/SessionProvider";
+import { QueueProvider } from "@/components/QueueProvider";
+import { QueuePanel } from "@/components/QueuePanel";
 import { NavBar } from "@/components/NavBar";
 import { AgeGate } from "@/components/AgeGate";
 
@@ -32,11 +34,14 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col bg-background text-foreground">
         <SessionProvider>
-          <AgeGate />
-          <NavBar />
-          <main className="flex-1 w-full mx-auto max-w-[1600px] px-3 sm:px-6 py-6">
-            {children}
-          </main>
+          <QueueProvider>
+            <AgeGate />
+            <NavBar />
+            <main className="flex-1 w-full mx-auto max-w-[1600px] px-3 sm:px-6 py-6">
+              {children}
+            </main>
+            <QueuePanel />
+          </QueueProvider>
         </SessionProvider>
       </body>
     </html>

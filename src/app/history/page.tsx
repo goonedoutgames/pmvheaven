@@ -7,16 +7,35 @@ import { useSession } from "@/components/SessionProvider";
 import { HistoryGrid, GridSkeleton } from "@/components/VideoGrid";
 import type { HistoryEntry, Paged } from "@/lib/types";
 
+interface SyncProgress {
+  phase: string;
+  processed: number;
+  total: number;
+  newCount: number;
+  totalRetained: number;
+  message?: string;
+}
+
+const PHASE_LABEL: Record<string, string> = {
+  starting: "Starting…",
+  fetching: "Fetching history from PMVHaven…",
+  hydrating: "Loading video details…",
+  saving: "Saving to your permanent library…",
+  done: "Finishing up…",
+};
+
 export default function HistoryPage() {
-  const { authenticated, loading: sessionLoading, historyCount, syncing, refresh } =
-    useSession();
+  const { authenticated, loading: sessionLoading, historyCount, refresh } = useSession();
   const [entries, setEntries] = useState<HistoryEntry[]>([]);
   const [page, setPage] = useState(1);
   const [hasNext, setHasNext] = useState(true);
   const [loading, setLoading] = useState(false);
   const [initialized, setInitialized] = useState(false);
   const [total, setTotal] = useState(0);
+  const [retained, setRetained] = useState(0);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
+  const [prog, setProg] = useState<SyncProgress | null>(null);
+  const [busy, setBusy] = useState(false);
   const sentinel = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async (p: number, replace = false) => {
@@ -57,25 +76,48 @@ export default function HistoryPage() {
     return () => io.disconnect();
   }, [hasNext, loading, page, load, initialized]);
 
-  const runSync = async (full: boolean) => {
-    setSyncMsg("Syncing…");
+  const runSync = async () => {
+    if (busy) return;
+    setBusy(true);
+    setSyncMsg(null);
+    setProg({ phase: "starting", processed: 0, total: 0, newCount: 0, totalRetained: 0 });
+
+    let stop = false;
+    const poll = async () => {
+      while (!stop) {
+        try {
+          const s = await fetch("/api/history/sync", { cache: "no-store" }).then((r) =>
+            r.json(),
+          );
+          if (s.progress) setProg(s.progress);
+        } catch {
+          /* ignore */
+        }
+        await new Promise((r) => setTimeout(r, 500));
+      }
+    };
+    void poll();
+
     try {
-      const res = await fetch(`/api/history/sync${full ? "?full=1" : ""}`, {
-        method: "POST",
-      });
+      const res = await fetch("/api/history/sync", { method: "POST" });
       const data = await res.json();
       if (data.status === "ok") {
-        setSyncMsg(`Added ${data.newCount} new · ${data.seenCount} already saved`);
-        setPage(1);
-        setInitialized(false);
-        await load(1, true);
+        setRetained(data.totalRetained ?? 0);
+        setSyncMsg(
+          `Imported ${data.newCount} new (${data.seenCount} already saved). PMVHaven retains ${data.totalRetained?.toLocaleString?.() ?? data.totalRetained} total.`,
+        );
       } else {
         setSyncMsg(data.message ?? "Sync failed");
       }
     } catch {
       setSyncMsg("Sync failed");
     } finally {
+      stop = true;
+      setProg(null);
+      setPage(1);
+      await load(1, true);
       void refresh();
+      setBusy(false);
     }
   };
 
@@ -95,36 +137,56 @@ export default function HistoryPage() {
     );
   }
 
+  const pct =
+    prog && prog.total > 0 ? Math.round((prog.processed / prog.total) * 100) : null;
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Watch history</h1>
           <p className="mt-1 text-sm text-muted">
-            {total.toLocaleString()} videos kept permanently
-            {historyCount !== total && ` · ${historyCount.toLocaleString()} in library`}
+            {(total || historyCount).toLocaleString()} kept permanently
+            {retained > total &&
+              ` · PMVHaven retains ${retained.toLocaleString()} (only the latest ~500 are importable)`}
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => runSync(false)}
-            disabled={syncing || loading}
-            className="flex items-center gap-2 rounded-lg border border-border bg-surface px-3.5 py-2 text-sm font-medium transition hover:bg-surface-2 disabled:opacity-60"
-          >
-            <RefreshCw size={15} className={syncing ? "animate-spin" : ""} />
-            Sync new
-          </button>
-          <button
-            onClick={() => runSync(true)}
-            disabled={syncing || loading}
-            className="rounded-lg border border-border bg-surface px-3.5 py-2 text-sm font-medium transition hover:bg-surface-2 disabled:opacity-60"
-          >
-            Full resync
-          </button>
-        </div>
+        <button
+          onClick={runSync}
+          disabled={busy}
+          className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-60"
+        >
+          <RefreshCw size={15} className={busy ? "animate-spin" : ""} />
+          {busy ? "Syncing…" : "Sync history"}
+        </button>
       </div>
 
-      {syncMsg && <p className="text-sm text-muted">{syncMsg}</p>}
+      {prog && (
+        <div className="flex flex-col gap-2 rounded-xl border border-border bg-surface p-4">
+          <div className="flex items-center justify-between text-sm">
+            <span className="flex items-center gap-2">
+              <Loader2 size={15} className="animate-spin text-accent" />
+              {PHASE_LABEL[prog.phase] ?? prog.message ?? "Working…"}
+            </span>
+            <span className="tabular-nums text-muted">
+              {prog.total > 0
+                ? `${prog.processed}/${prog.total}${pct !== null ? ` · ${pct}%` : ""}`
+                : ""}
+            </span>
+          </div>
+          <div className="h-2 overflow-hidden rounded-full bg-surface-2">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-accent to-accent-2 transition-all"
+              style={{ width: `${pct ?? 8}%` }}
+            />
+          </div>
+          {prog.newCount > 0 && (
+            <p className="text-xs text-muted">{prog.newCount} new saved so far</p>
+          )}
+        </div>
+      )}
+
+      {syncMsg && !prog && <p className="text-sm text-muted">{syncMsg}</p>}
 
       {!initialized ? (
         <GridSkeleton count={10} />
@@ -132,8 +194,8 @@ export default function HistoryPage() {
         <div className="py-16 text-center text-muted">
           <p>No history yet.</p>
           <p className="mt-2 text-sm">
-            Click <strong>Full resync</strong> to import your retained PMVHaven
-            history, then it&apos;s kept here forever.
+            Click <strong>Sync history</strong> to import your retained PMVHaven
+            history — it&apos;s then kept here permanently.
           </p>
         </div>
       ) : (

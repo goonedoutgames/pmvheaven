@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getAccountUser, isConnected } from "@/lib/pmvhaven";
 import { isAppAuthenticated } from "@/lib/session";
 import { historyCount } from "@/lib/repo";
-import { lastSync, isSyncing } from "@/lib/sync";
+import { lastSync, isSyncing, syncProgress } from "@/lib/sync";
 
 export const runtime = "nodejs";
 
@@ -14,5 +14,6 @@ export async function GET() {
     historyCount: historyCount(),
     lastSync: lastSync(),
     syncing: isSyncing(),
+    syncProgress: syncProgress(),
   });
 }
