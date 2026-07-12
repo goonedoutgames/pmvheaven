@@ -1,6 +1,10 @@
+#[cfg(not(debug_assertions))]
 use std::net::TcpStream;
-use std::process::{Child, Command};
+use std::process::Child;
+#[cfg(not(debug_assertions))]
+use std::process::Command;
 use std::sync::Mutex;
+#[cfg(not(debug_assertions))]
 use std::time::{Duration, Instant};
 
 use tauri::{Manager, RunEvent};
@@ -8,8 +12,10 @@ use tauri::{Manager, RunEvent};
 /// Holds the spawned Next.js server process so it can be killed on exit.
 struct ServerProc(Mutex<Option<Child>>);
 
+#[cfg(not(debug_assertions))]
 const SERVER_ADDR: &str = "127.0.0.1:3000";
 
+#[cfg(not(debug_assertions))]
 fn wait_for_port(addr: &str, timeout: Duration) -> bool {
     let start = Instant::now();
     while start.elapsed() < timeout {
