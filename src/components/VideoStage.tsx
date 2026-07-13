@@ -5,6 +5,7 @@ import { Maximize, Minimize } from "lucide-react";
 import { attachStream } from "@/lib/playback";
 import { usePlayer, type MiniVideo } from "./PlayerProvider";
 import { useQueue } from "./QueueProvider";
+import { useWatched } from "./WatchedProvider";
 
 /**
  * The single <video> surface. Attaches the stream only when the *video* changes
@@ -23,6 +24,7 @@ export function VideoStage({
 }) {
   const { video, startAt, play, fullscreen, toggleFullscreen, reportTime } = usePlayer();
   const { shift } = useQueue();
+  const { markWatched } = useWatched();
   const videoRef = useRef<HTMLVideoElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const counted = useRef(false);
@@ -63,6 +65,8 @@ export function VideoStage({
     void el.play?.().catch(() => {});
 
     const report = (progress: number, countView: boolean) => {
+      // Reflect the watched state immediately so "Watched" badges light up live.
+      markWatched(video.id, progress);
       void fetch("/api/view", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

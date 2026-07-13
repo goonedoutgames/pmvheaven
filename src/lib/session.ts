@@ -23,7 +23,10 @@ export async function createAppSession(): Promise<void> {
   store.set(COOKIE, token, {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    // The desktop app serves over http://127.0.0.1, where WebKitGTK refuses to
+    // store `Secure` cookies — so the session would never persist and login
+    // silently fails. Only mark Secure for a real HTTPS web deployment.
+    secure: process.env.NODE_ENV === "production" && process.env.PH_DESKTOP !== "1",
     path: "/",
     maxAge: Math.floor(TTL_MS / 1000),
   });

@@ -140,7 +140,32 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       if (np) applyLocal(np.video, np.at);
       ch.postMessage({ type: "ready" } as PlayerMessage);
     } else {
-      setRemoteActive(!!readNowPlaying());
+      // Main window launch: reconcile any persisted session so we never show a
+      // phantom "something is playing" state (which would make card clicks
+      // prompt with no visible player).
+      let sepOn = false;
+      try {
+        sepOn = localStorage.getItem(PLAYER_WINDOW_SETTING_KEY) === "1";
+      } catch {
+        /* ignore */
+      }
+      const np = readNowPlaying();
+      if (sepOn && np) {
+        // Last session played in a separate window — actually reopen it so the
+        // "playing" state is real, not a phantom with no window behind it.
+        setRemoteActive(true);
+        void openPlayerWindow();
+      } else if (sepOn) {
+        setRemoteActive(false);
+      } else if (np) {
+        // We were playing in the in-app rail last session — restore it visibly
+        // (with its queue still in localStorage) instead of faking remote state.
+        applyLocal(np.video, np.at);
+        setRemoteActive(false);
+      } else {
+        // Nothing was playing — start clean, don't show the player.
+        setRemoteActive(false);
+      }
     }
 
     return () => ch.close();
@@ -168,21 +193,24 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       setRemoteActive(false);
       return;
     }
-    if (isPlayerWindow) writeNowPlaying(null);
+    // Rail or player window: clear the persisted session so it isn't restored.
+    writeNowPlaying(null);
     applyLocal(null);
   }, [separateWindow, isPlayerWindow, applyLocal]);
 
-  // Keep now-playing current in the player window (including queue auto-advance)
-  // so closing/reopening the window resumes the *current* clip near its spot.
+  // Persist now-playing whenever this window holds a video (rail OR player
+  // window) so relaunching restores the last session. In separate-window mode
+  // the main window's `video` is null, so only the player window persists —
+  // no cross-window clobbering.
   useEffect(() => {
-    if (isPlayerWindow && video) writeNowPlaying({ video, at: 0 });
+    if (video) writeNowPlaying({ video, at: startAt });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isPlayerWindow, video?.id]);
+  }, [video?.id]);
 
   const reportTime = useCallback(
     (t: number) => {
       currentTimeRef.current = t;
-      if (isPlayerWindow && video) {
+      if (video) {
         const now = Date.now();
         if (now - lastPersist.current > 5000) {
           lastPersist.current = now;
@@ -190,7 +218,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         }
       }
     },
-    [isPlayerWindow, video],
+    [video],
   );
 
   const toggleFullscreen = useCallback(() => {

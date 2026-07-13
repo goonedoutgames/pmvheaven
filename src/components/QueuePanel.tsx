@@ -1,15 +1,27 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { ChevronDown, ChevronUp, ListVideo, Play, Trash2, X } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronUp,
+  GripVertical,
+  ListVideo,
+  Play,
+  Trash2,
+  X,
+} from "lucide-react";
 import { useQueue } from "./QueueProvider";
 import { usePlayer, type MiniVideo } from "./PlayerProvider";
+import { useListDrag } from "./useListDrag";
 import { formatDuration } from "@/lib/format";
 
 export function QueuePanel() {
-  const { queue, isOpen, setOpen, remove, move, clear, consumeTo } = useQueue();
+  const { queue, isOpen, setOpen, remove, move, reorder, clear, consumeTo } = useQueue();
   const { play } = usePlayer();
   const router = useRouter();
+
+  // Pointer-based drag reordering (HTML5 DnD is unreliable in WebKitGTK).
+  const { dragIndex, overIndex, start } = useListDrag(reorder);
 
   const playFrom = async (id: string) => {
     // Consume everything up to and including the chosen item, then play it in
@@ -78,8 +90,23 @@ export function QueuePanel() {
               {queue.map((v, i) => (
                 <li
                   key={v.id}
-                  className="group flex gap-3 rounded-xl border border-transparent p-2 transition hover:border-border hover:bg-surface-2"
+                  data-drag-index={i}
+                  className={`group flex gap-2 rounded-xl border p-2 transition ${
+                    dragIndex === i
+                      ? "border-border bg-surface-2 opacity-50"
+                      : overIndex === i && dragIndex !== null
+                        ? "border-accent bg-surface-2"
+                        : "border-transparent hover:border-border hover:bg-surface-2"
+                  }`}
                 >
+                  <button
+                    onPointerDown={(e) => start(i, e)}
+                    aria-label="Drag to reorder"
+                    className="flex shrink-0 touch-none cursor-grab items-center self-stretch rounded text-muted transition hover:text-foreground active:cursor-grabbing"
+                  >
+                    <GripVertical size={16} />
+                  </button>
+
                   <button
                     onClick={() => playFrom(v.id)}
                     className="relative aspect-video w-28 shrink-0 overflow-hidden rounded-lg bg-surface-2"
@@ -88,6 +115,7 @@ export function QueuePanel() {
                     <img
                       src={v.thumbnailUrl}
                       alt={v.title}
+                      draggable={false}
                       className="h-full w-full object-cover"
                     />
                     <span className="absolute inset-0 grid place-items-center bg-black/40 opacity-0 transition group-hover:opacity-100">

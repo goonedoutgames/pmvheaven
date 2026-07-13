@@ -5,6 +5,7 @@ import { getRelated, getVideo } from "@/lib/pmvhaven";
 import { cacheVideo, cacheVideos } from "@/lib/repo";
 import { WatchAutoplay } from "@/components/WatchAutoplay";
 import { WatchActions } from "@/components/WatchActions";
+import { WatchedBadge } from "@/components/WatchedBadge";
 import { QueueButtonLabeled } from "@/components/QueueButton";
 import { VideoCard } from "@/components/VideoCard";
 import { formatViews, ratingColor, timeAgo } from "@/lib/format";
@@ -37,6 +38,7 @@ export default async function WatchPage({
         <WatchAutoplay video={video} />
 
         <div className="flex flex-col gap-3">
+          <WatchedBadge id={video.id} />
           <h1 className="text-xl font-bold leading-tight sm:text-2xl">{video.title}</h1>
 
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted">

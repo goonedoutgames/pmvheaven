@@ -10,7 +10,7 @@
     "tauri": "tauri",
     "desktop:dev": "tauri dev",
     "desktop:prepare": "next build && node scripts/prepare-desktop.mjs",
-    "desktop:build": "tauri build"
+    "desktop:build": "node scripts/build-appimage.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.11.1",

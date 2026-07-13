@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { useRef, useState } from "react";
-import { Eye, Star } from "lucide-react";
+import { Check, Eye, Star } from "lucide-react";
 import type { VideoSummary } from "@/lib/types";
 import { formatDuration, formatViews, ratingColor, timeAgo } from "@/lib/format";
 import { QueueButton } from "./QueueButton";
 import { usePlayer } from "./PlayerProvider";
 import { usePlayChoice } from "./PlayChoiceProvider";
+import { useWatched } from "./WatchedProvider";
 
 export function VideoCard({
   video,
@@ -20,6 +21,11 @@ export function VideoCard({
   const videoRef = useRef<HTMLVideoElement>(null);
   const { video: playing, remoteActive } = usePlayer();
   const { request } = usePlayChoice();
+  const { isWatched, progress } = useWatched();
+
+  const watched = isWatched(video.id);
+  // Prefer the live/global progress; fall back to any prop passed by a parent.
+  const barProgress = progress(video.id) ?? watchedProgress;
 
   // If a different video is already playing, clicking a card is ambiguous — ask
   // whether to play it over the current one or add it to the queue, so we never
@@ -85,22 +91,30 @@ export function VideoCard({
           <QueueButton video={video} />
         </div>
 
-        {video.rating > 0 && (
-          <span
-            className={`absolute left-1.5 top-1.5 flex items-center gap-0.5 rounded bg-black/80 px-1.5 py-0.5 text-xs font-semibold ${ratingColor(
-              video.rating,
-            )}`}
-          >
-            <Star size={11} className="fill-current" />
-            {Math.round(video.rating)}%
-          </span>
-        )}
+        <div className="absolute left-1.5 top-1.5 flex flex-col items-start gap-1">
+          {watched && (
+            <span className="flex items-center gap-1 rounded bg-accent px-1.5 py-0.5 text-xs font-bold uppercase tracking-wide text-white shadow-md shadow-black/40">
+              <Check size={12} strokeWidth={3} />
+              Watched
+            </span>
+          )}
+          {video.rating > 0 && (
+            <span
+              className={`flex items-center gap-0.5 rounded bg-black/80 px-1.5 py-0.5 text-xs font-semibold ${ratingColor(
+                video.rating,
+              )}`}
+            >
+              <Star size={11} className="fill-current" />
+              {Math.round(video.rating)}%
+            </span>
+          )}
+        </div>
 
-        {typeof watchedProgress === "number" && watchedProgress > 0 && (
+        {typeof barProgress === "number" && barProgress > 0 && (
           <span className="absolute inset-x-0 bottom-0 h-1 bg-black/50">
             <span
               className="block h-full bg-accent"
-              style={{ width: `${Math.min(100, watchedProgress * 100)}%` }}
+              style={{ width: `${Math.min(100, barProgress * 100)}%` }}
             />
           </span>
         )}

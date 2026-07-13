@@ -3,6 +3,14 @@
   "identifier": "default",
   "description": "Default capabilities for the app windows",
   "windows": ["main", "player"],
+  "remote": {
+    "urls": [
+      "http://localhost:3000",
+      "http://localhost:3000/*",
+      "http://127.0.0.1:3000",
+      "http://127.0.0.1:3000/*"
+    ]
+  },
   "permissions": [
     "core:default",
     "core:window:allow-minimize",

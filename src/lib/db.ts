@@ -12,7 +12,13 @@ const DATA_DIR = process.env.PH_DATA_DIR
   ? path.resolve(process.env.PH_DATA_DIR)
   : path.join(process.cwd(), "data");
 
-const DB_PATH = path.join(DATA_DIR, "pmvheaven.db");
+// NOTE: intentionally NOT `path.join(DATA_DIR, "pmvheaven.db")`. Turbopack
+// special-cases path.join/path.resolve: when DATA_DIR is dynamic (the
+// PH_DATA_DIR branch) and the second arg is a string literal, it treats this as
+// a dynamic asset glob and scans the ENTIRE project tree (node_modules,
+// src-tauri/target, ...) — ~160k files — which makes builds extremely slow.
+// Plain string concatenation is opaque to that analysis.
+const DB_PATH = DATA_DIR + path.sep + "pmvheaven.db";
 
 let db: Database.Database | null = null;
 

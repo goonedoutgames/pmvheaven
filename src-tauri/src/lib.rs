@@ -87,11 +87,24 @@ pub fn run() {
                     .env("HOSTNAME", "127.0.0.1")
                     .env("NODE_ENV", "production")
                     .env("PH_DATA_DIR", &data_dir)
+                    // Served over http loopback: disable Secure cookies so the
+                    // app session persists in the webview.
+                    .env("PH_DESKTOP", "1")
                     .spawn()
                 {
                     Ok(child) => {
                         app.state::<ServerProc>().0.lock().unwrap().replace(child);
-                        wait_for_port(SERVER_ADDR, Duration::from_secs(30));
+                        // The webview starts loading the configured URL the moment the
+                        // window is created — which is *before* this server is ready, so
+                        // it fails with connection-refused and shows a blank page. Wait
+                        // for the port to open, then (re)navigate to load the app.
+                        if wait_for_port(SERVER_ADDR, Duration::from_secs(30)) {
+                            // Navigate to 127.0.0.1 (matches the server's bind address);
+                            // "localhost" can resolve to IPv6 ::1 and miss the server.
+                            if let Ok(url) = "http://127.0.0.1:3000/".parse() {
+                                let _ = window.navigate(url);
+                            }
+                        }
                     }
                     Err(err) => {
                         eprintln!("Failed to start Next.js server: {err}");

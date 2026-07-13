@@ -5,6 +5,7 @@ import { SessionProvider } from "@/components/SessionProvider";
 import { QueueProvider } from "@/components/QueueProvider";
 import { PlayerProvider } from "@/components/PlayerProvider";
 import { PlayChoiceProvider } from "@/components/PlayChoiceProvider";
+import { WatchedProvider } from "@/components/WatchedProvider";
 import { AppShell } from "@/components/AppShell";
 
 const geistSans = Geist({
@@ -34,13 +35,15 @@ export default function RootLayout({
     >
       <body className="bg-background text-foreground">
         <SessionProvider>
-          <QueueProvider>
-            <PlayerProvider>
-              <PlayChoiceProvider>
-                <AppShell>{children}</AppShell>
-              </PlayChoiceProvider>
-            </PlayerProvider>
-          </QueueProvider>
+          <WatchedProvider>
+            <QueueProvider>
+              <PlayerProvider>
+                <PlayChoiceProvider>
+                  <AppShell>{children}</AppShell>
+                </PlayChoiceProvider>
+              </PlayerProvider>
+            </QueueProvider>
+          </WatchedProvider>
         </SessionProvider>
       </body>
     </html>

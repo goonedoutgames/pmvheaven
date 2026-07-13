@@ -154,6 +154,16 @@ export function historyCount(): number {
   ).c;
 }
 
+/** Map of every watched video id -> max progress (0..1). Powers "Watched" badges. */
+export function watchedProgressMap(): Record<string, number> {
+  const rows = getDb()
+    .prepare("SELECT video_id, progress FROM watch_history")
+    .all() as Array<{ video_id: string; progress: number }>;
+  const map: Record<string, number> = {};
+  for (const r of rows) map[r.video_id] = r.progress ?? 0;
+  return map;
+}
+
 /* --------------------------- favorites / later --------------------------- */
 
 type Bucket = "favorites" | "watch_later";

@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import {
   ExternalLink,
+  GripVertical,
   ListVideo,
   MonitorPlay,
   Play,
@@ -14,6 +15,7 @@ import { formatDuration } from "@/lib/format";
 import { openPlayerWindow, type MiniVideo } from "@/lib/player";
 import { usePlayer } from "./PlayerProvider";
 import { useQueue } from "./QueueProvider";
+import { useListDrag } from "./useListDrag";
 import { VideoStage } from "./VideoStage";
 
 export function PlayerRail() {
@@ -27,8 +29,11 @@ export function PlayerRail() {
     setSeparateWindow,
     play,
   } = usePlayer();
-  const { queue, remove, consumeTo, clear } = useQueue();
+  const { queue, remove, reorder, consumeTo, clear } = useQueue();
   const router = useRouter();
+
+  // Pointer-based drag reordering (HTML5 DnD is unreliable in WebKitGTK).
+  const { dragIndex, overIndex, start } = useListDrag(reorder);
 
   // The dedicated player window renders its own player, not this rail.
   if (isPlayerWindow) return null;
@@ -135,17 +140,36 @@ export function PlayerRail() {
               Nothing queued. Add videos with the <strong>+</strong> button.
             </li>
           )}
-          {queue.map((v) => (
+          {queue.map((v, i) => (
             <li
               key={v.id}
-              className="group flex gap-2 rounded-lg border border-transparent p-1.5 transition hover:border-border hover:bg-surface-2"
+              data-drag-index={i}
+              className={`group flex gap-1.5 rounded-lg border p-1.5 transition ${
+                dragIndex === i
+                  ? "border-border bg-surface-2 opacity-50"
+                  : overIndex === i && dragIndex !== null
+                    ? "border-accent bg-surface-2"
+                    : "border-transparent hover:border-border hover:bg-surface-2"
+              }`}
             >
+              <button
+                onPointerDown={(e) => start(i, e)}
+                aria-label="Drag to reorder"
+                className="flex shrink-0 touch-none cursor-grab items-center self-stretch text-muted transition hover:text-foreground active:cursor-grabbing"
+              >
+                <GripVertical size={14} />
+              </button>
               <button
                 onClick={() => playFrom(v.id)}
                 className="relative aspect-video w-24 shrink-0 overflow-hidden rounded-md bg-surface-2"
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={v.thumbnailUrl} alt={v.title} className="h-full w-full object-cover" />
+                <img
+                  src={v.thumbnailUrl}
+                  alt={v.title}
+                  draggable={false}
+                  className="h-full w-full object-cover"
+                />
                 <span className="absolute inset-0 grid place-items-center bg-black/40 opacity-0 transition group-hover:opacity-100">
                   <Play size={16} className="fill-white" />
                 </span>

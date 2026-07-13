@@ -30,6 +30,8 @@ interface QueueState {
   playNext: (video: VideoSummary) => void;
   remove: (id: string) => void;
   move: (id: string, dir: -1 | 1) => void;
+  /** Move the item at `from` to position `to` (drag-and-drop reordering). */
+  reorder: (from: number, to: number) => void;
   clear: () => void;
   /** Remove and return the first queued item (used for autoplay). */
   shift: () => VideoSummary | null;
@@ -105,6 +107,18 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  const reorder = useCallback((from: number, to: number) => {
+    setQueue((q) => {
+      if (from === to || from < 0 || to < 0 || from >= q.length || to >= q.length) {
+        return q;
+      }
+      const next = [...q];
+      const [item] = next.splice(from, 1);
+      next.splice(to, 0, item);
+      return next;
+    });
+  }, []);
+
   const clear = useCallback(() => setQueue([]), []);
 
   // Reads the current queue synchronously (deps include `queue`) so callers
@@ -141,13 +155,14 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
       playNext,
       remove,
       move,
+      reorder,
       clear,
       shift,
       consumeTo,
       peek,
       isQueued,
     }),
-    [queue, isOpen, add, playNext, remove, move, clear, shift, consumeTo, peek, isQueued],
+    [queue, isOpen, add, playNext, remove, move, reorder, clear, shift, consumeTo, peek, isQueued],
   );
 
   return <QueueContext.Provider value={value}>{children}</QueueContext.Provider>;
