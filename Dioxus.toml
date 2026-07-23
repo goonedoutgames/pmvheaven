@@ -1,0 +1,20 @@
+[application]
+name = "pmvheaven"
+
+[web.app]
+title = "PMVHeaven"
+
+[web.resource]
+style = []
+script = []
+
+[web.resource.dev]
+script = []
+
+[bundle]
+identifier = "com.pmvheaven.desktop"
+publisher = "PMVHeaven"
+icon = ["assets/logo.png"]
+category = "Entertainment"
+short_description = "Ad-free PMVHaven desktop client"
+long_description = "Native-ish Rust desktop client for PMVHaven with permanent local watch history."
