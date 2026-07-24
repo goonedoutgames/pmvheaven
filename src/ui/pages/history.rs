@@ -1,9 +1,12 @@
 use crate::models::HistoryEntry;
+use crate::services::player::trim_front;
 use crate::services::repo::get_history_page;
 use crate::services::sync::{is_syncing, sync_progress, sync_watch_history};
 use crate::ui::pages::components::{refresh_watched_map, VideoCard};
 use dioxus::prelude::*;
 use std::collections::HashMap;
+
+const MAX_HISTORY_ITEMS: usize = 120;
 
 #[component]
 pub fn History() -> Element {
@@ -81,6 +84,7 @@ pub fn History() -> Element {
                         let (more, t) = get_history_page(p, 60);
                         let mut cur = items();
                         cur.extend(more);
+                        trim_front(&mut cur, MAX_HISTORY_ITEMS);
                         items.set(cur);
                         total.set(t);
                         page.set(p);

@@ -1,14 +1,12 @@
-use crate::models::{HistoryEntry, VideoDetail, VideoSummary};
+use crate::models::{VideoDetail, VideoSummary};
+use crate::services::player;
 use crate::services::pmv::shared_client;
 use crate::services::queue;
-use crate::services::repo::{
-    Bucket, cache_video, set_local_bucket, upsert_history,
-};
-use crate::services::stream_proxy::proxied_url;
+use crate::services::repo::{Bucket, set_local_bucket};
 use crate::ui::nav::Route;
-use crate::ui::pages::components::{refresh_watched_map, VideoGrid};
+use crate::ui::pages::components::{format_views, VideoGrid};
+use crate::models::PlayableVideo;
 use dioxus::prelude::*;
-use std::collections::HashMap;
 
 #[component]
 pub fn Watch(id: String) -> Element {
@@ -16,10 +14,9 @@ pub fn Watch(id: String) -> Element {
     let mut related = use_signal(|| Vec::<VideoSummary>::new());
     let mut loading = use_signal(|| true);
     let mut err = use_signal(|| None::<String>);
-    let proxy_base = use_context::<Signal<String>>();
+    let now_playing = use_context::<Signal<Option<PlayableVideo>>>();
+    let start_at = use_context::<Signal<f64>>();
     let mut queue_tick = use_context::<Signal<u32>>();
-    let mut now_playing = use_context::<Signal<Option<VideoSummary>>>();
-    let watched_map = use_context::<Signal<HashMap<String, f64>>>();
     let id_c = id.clone();
 
     use_future(move || {
@@ -29,33 +26,33 @@ pub fn Watch(id: String) -> Element {
             let client = shared_client();
             match client.get_video(&id).await {
                 Ok(d) => {
-                    cache_video(&d.summary);
-                    now_playing.set(Some(d.summary.clone()));
-                    // Record local watch start
-                    upsert_history(
-                        &HistoryEntry {
-                            video: d.summary.clone(),
-                            watched_at: chrono::Utc::now().to_rfc3339(),
-                            progress: d.watch_progress.max(0.01),
-                        },
-                        "local",
-                    );
-                    refresh_watched_map(watched_map);
+                    // Kick the rail immediately — don't wait on related.
+                    player::play_detail(now_playing, start_at, &d);
                     let client2 = client.clone();
                     let vid = id.clone();
                     spawn(async move {
                         client2.record_view(&vid).await;
                     });
-                    let rel = client.get_related(&id).await.unwrap_or_default();
-                    related.set(rel);
                     detail.set(Some(d));
                     err.set(None);
+                    loading.set(false);
+                    // Related in background
+                    spawn(async move {
+                        let rel = client.get_related(&id).await.unwrap_or_default();
+                        related.set(rel);
+                    });
                 }
-                Err(e) => err.set(Some(e.to_string())),
+                Err(e) => {
+                    err.set(Some(e.to_string()));
+                    loading.set(false);
+                }
             }
-            loading.set(false);
         }
     });
+
+    let is_current = now_playing()
+        .as_ref()
+        .is_some_and(|p| p.summary.id == id);
 
     rsx! {
         if loading() {
@@ -64,39 +61,25 @@ pub fn Watch(id: String) -> Element {
             p { class: "error", "{e}" }
         } else if let Some(d) = detail() {
             {
-                let stream = if d.hls_enabled {
-                    d.hls_master_playlist_url
-                        .clone()
-                        .filter(|u| !u.is_empty())
-                        .unwrap_or_else(|| d.video_url.clone())
-                } else {
-                    d.video_url.clone()
-                };
-                let proxied = proxied_url(&proxy_base(), &stream);
-                let mp4 = proxied_url(&proxy_base(), &d.video_url);
-                let resume = d.watch_progress;
-                let title = d.summary.title.clone();
                 let summary = d.summary.clone();
                 let is_fav = d.is_favorited;
                 let is_later = d.is_watch_later;
-
                 rsx! {
                     div { class: "watch-layout",
                         div { class: "watch-main",
-                            VideoPlayer {
-                                src: proxied,
-                                mp4_fallback: mp4,
-                                resume: resume,
-                                title: title.clone(),
-                                on_ended: move |_| {
-                                    if let Some(next) = queue::shift() {
-                                        queue_tick.set(queue_tick() + 1);
-                                        now_playing.set(Some(next.clone()));
-                                        // Navigation handled by parent via signal + effect ideally;
-                                        // use navigator in handler:
+                            div { class: "watch-poster",
+                                if !d.summary.thumbnail_url.is_empty() {
+                                    img {
+                                        src: "{d.summary.thumbnail_url}",
+                                        alt: "{d.summary.title}",
                                     }
-                                },
-                                video_id: d.summary.id.clone(),
+                                }
+                                div { class: "watch-poster-overlay",
+                                    span { class: "watch-poster-badge",
+                                        if is_current { "Playing in the player panel" }
+                                        else { "Starting…" }
+                                    }
+                                }
                             }
                             h1 { style: "margin: 1rem 0 0.35rem; font-size: 1.35rem;", "{d.summary.title}" }
                             p { class: "muted",
@@ -108,7 +91,10 @@ pub fn Watch(id: String) -> Element {
                                     },
                                     "{d.summary.uploader_username}"
                                 }
-                                " · {crate::ui::pages::components::format_views(d.summary.views)}"
+                                " · {format_views(d.summary.views)}"
+                                if d.summary.rating > 0.0 {
+                                    " · ★ {d.summary.rating.round() as i32}%"
+                                }
                             }
                             div { class: "card-actions", style: "margin-top: 0.75rem;",
                                 button {
@@ -184,139 +170,15 @@ pub fn Watch(id: String) -> Element {
                         }
                         aside {
                             h2 { style: "margin-top:0;", "Related" }
-                            VideoGrid { items: related() }
+                            if related().is_empty() {
+                                p { class: "muted", "Loading related…" }
+                            } else {
+                                VideoGrid { items: related() }
+                            }
                         }
                     }
                 }
             }
-        }
-    }
-}
-
-#[component]
-fn VideoPlayer(
-    src: String,
-    mp4_fallback: String,
-    resume: f64,
-    title: String,
-    video_id: String,
-    on_ended: EventHandler<()>,
-) -> Element {
-    let navigator = use_navigator();
-    let mut queue_tick = use_context::<Signal<u32>>();
-
-    use_effect(move || {
-        let src = src.clone();
-        let mp4 = mp4_fallback.clone();
-        let resume = resume;
-        let video_id = video_id.clone();
-        spawn(async move {
-            // Attach stream via eval — prefer progressive MP4 on WebKit, else hls.js
-            let script = format!(
-                r#"
-                (function() {{
-                  const video = document.getElementById('pmv-player');
-                  if (!video) return 'no-video';
-                  const src = {src:?};
-                  const mp4 = {mp4:?};
-                  const resume = {resume};
-                  const isHls = src.includes('.m3u8');
-                  const preferMp4 = true; // WebKitGTK: progressive is more reliable
-                  function setProgressHandlers() {{
-                    let last = 0;
-                    video.ontimeupdate = () => {{
-                      if (!video.duration || video.duration < 1) return;
-                      const now = Date.now();
-                      if (now - last < 15000) return;
-                      last = now;
-                      const p = video.currentTime / video.duration;
-                      window.__pmvProgress = {{ id: {video_id:?}, progress: p }};
-                    }};
-                    video.onended = () => {{ window.__pmvEnded = true; }};
-                  }}
-                  function startAt() {{
-                    if (resume > 0.01 && resume < 0.95) {{
-                      const t = () => {{ video.currentTime = resume * (video.duration || 0); video.removeEventListener('loadedmetadata', t); }};
-                      video.addEventListener('loadedmetadata', t);
-                    }}
-                    video.play().catch(() => {{}});
-                  }}
-                  if (preferMp4 && mp4) {{
-                    if (window.__hls) {{ try {{ window.__hls.destroy(); }} catch(e) {{}} window.__hls = null; }}
-                    video.src = mp4;
-                    setProgressHandlers();
-                    startAt();
-                    return 'mp4';
-                  }}
-                  if (isHls && window.Hls && window.Hls.isSupported()) {{
-                    if (window.__hls) {{ try {{ window.__hls.destroy(); }} catch(e) {{}} }}
-                    const hls = new window.Hls();
-                    window.__hls = hls;
-                    hls.loadSource(src);
-                    hls.attachMedia(video);
-                    hls.on(window.Hls.Events.MANIFEST_PARSED, startAt);
-                    hls.on(window.Hls.Events.ERROR, (_, data) => {{
-                      if (data.fatal && mp4) {{
-                        try {{ hls.destroy(); }} catch(e) {{}}
-                        video.src = mp4;
-                        startAt();
-                      }}
-                    }});
-                    setProgressHandlers();
-                    return 'hls';
-                  }}
-                  video.src = isHls ? mp4 || src : src;
-                  setProgressHandlers();
-                  startAt();
-                  return 'native';
-                }})()
-                "#
-            );
-            let _ = document::eval(&script).await;
-        });
-    });
-
-    // Poll for ended + progress
-    use_future(move || async move {
-        loop {
-            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-            if let Ok(v) = document::eval("return !!window.__pmvEnded").await {
-                if v.as_bool() == Some(true) {
-                    let _ = document::eval("window.__pmvEnded = false").await;
-                    if let Some(next) = queue::shift() {
-                        queue_tick.set(queue_tick() + 1);
-                        navigator.push(Route::Watch { id: next.id });
-                    }
-                    on_ended.call(());
-                }
-            }
-            if let Ok(v) = document::eval("return window.__pmvProgress || null").await {
-                if !v.is_null() {
-                    let id = v.get("id").and_then(|x| x.as_str()).unwrap_or("").to_string();
-                    let progress = v.get("progress").and_then(|x| x.as_f64()).unwrap_or(0.0);
-                    let _ = document::eval("window.__pmvProgress = null").await;
-                    if let Some(summary) = crate::services::repo::get_cached_summary(&id) {
-                        upsert_history(
-                            &HistoryEntry {
-                                video: summary,
-                                watched_at: chrono::Utc::now().to_rfc3339(),
-                                progress,
-                            },
-                            "local",
-                        );
-                    }
-                }
-            }
-        }
-    });
-
-    rsx! {
-        video {
-            id: "pmv-player",
-            controls: true,
-            playsinline: true,
-            style: "width:100%; max-height:70vh; background:#000; border-radius:12px;",
-            "title": "{title}",
         }
     }
 }

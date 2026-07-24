@@ -1,7 +1,8 @@
-use crate::models::AccountUser;
+use crate::models::{AccountUser, PlayableVideo};
 use crate::services::queue;
 use crate::ui::chrome::LOGO;
-use crate::ui::pages::components::QueuePanel;
+use crate::ui::play_choice::PlayChoiceModal;
+use crate::ui::player_sidebar::PlayerSidebar;
 use dioxus::prelude::*;
 
 #[derive(Clone, Routable, Debug, PartialEq)]
@@ -32,66 +33,80 @@ pub enum Route {
 fn AppLayout() -> Element {
     let user = use_context::<Signal<Option<AccountUser>>>();
     let mut queue_open = use_context::<Signal<bool>>();
-    let mut queue_len = use_signal(|| queue::len());
+    let queue_tick = use_context::<Signal<u32>>();
+    let now_playing = use_context::<Signal<Option<PlayableVideo>>>();
+    let player_fs = use_context::<Signal<bool>>();
     let mut search_q = use_signal(|| String::new());
     let navigator = use_navigator();
 
-    use_effect(move || {
-        let _ = queue_open();
-        queue_len.set(queue::len());
+    let queue_len = use_memo(move || {
+        let _ = queue_tick();
+        queue::len()
     });
 
+    let show_sidebar = now_playing().is_some() || queue_len() > 0 || queue_open();
+    let shell_class = if player_fs() {
+        "app-shell has-sidebar player-fs"
+    } else if show_sidebar {
+        "app-shell has-sidebar"
+    } else {
+        "app-shell"
+    };
+
     rsx! {
-        nav { class: "navbar",
-            Link { to: Route::Home {}, class: "nav-brand",
-                img { src: LOGO, alt: "PMVHeaven" }
-                span { "PMVHeaven" }
-            }
-            div { class: "nav-links",
-                Link { to: Route::Home {}, class: "nav-link", "Home" }
-                Link { to: Route::Browse { sort: Some("-uploadDate".into()), tags: None, creator: None }, class: "nav-link", "Browse" }
-                Link { to: Route::History {}, class: "nav-link", "History" }
-                Link { to: Route::Favorites {}, class: "nav-link", "Favorites" }
-                Link { to: Route::WatchLater {}, class: "nav-link", "Later" }
-            }
-            form {
-                class: "nav-search",
-                onsubmit: move |e| {
-                    e.prevent_default();
-                    let q = search_q();
-                    if !q.trim().is_empty() {
-                        navigator.push(Route::Search { q: Some(q) });
+        div { class: "{shell_class}",
+            div { class: "app-main",
+                nav { class: "navbar",
+                    Link { to: Route::Home {}, class: "nav-brand",
+                        img { src: LOGO, alt: "PMVHeaven" }
+                        span { class: "nav-brand-text", "PMVHeaven" }
                     }
-                },
-                input {
-                    r#type: "search",
-                    placeholder: "Search…",
-                    value: "{search_q}",
-                    oninput: move |e| search_q.set(e.value()),
-                    style: "width: 100%;",
+                    div { class: "nav-links",
+                        Link { to: Route::Home {}, class: "nav-link", "Home" }
+                        Link { to: Route::Browse { sort: Some("-uploadDate".into()), tags: None, creator: None }, class: "nav-link", "Browse" }
+                        Link { to: Route::History {}, class: "nav-link nav-hide-sm", "History" }
+                        Link { to: Route::Favorites {}, class: "nav-link nav-hide-sm", "Favorites" }
+                        Link { to: Route::WatchLater {}, class: "nav-link nav-hide-md", "Later" }
+                    }
+                    form {
+                        class: "nav-search",
+                        onsubmit: move |e| {
+                            e.prevent_default();
+                            let q = search_q();
+                            if !q.trim().is_empty() {
+                                navigator.push(Route::Search { q: Some(q) });
+                            }
+                        },
+                        input {
+                            r#type: "search",
+                            placeholder: "Search…",
+                            value: "{search_q}",
+                            oninput: move |e| search_q.set(e.value()),
+                            style: "width: 100%;",
+                        }
+                    }
+                    button {
+                        class: "btn btn-ghost",
+                        onclick: move |_| {
+                            queue_open.set(true);
+                        },
+                        "Queue ({queue_len()})"
+                    }
+                    div { class: "nav-user",
+                        if let Some(u) = user() {
+                            Link { to: Route::Settings {}, class: "nav-user-name", "{u.username}" }
+                        } else {
+                            Link { to: Route::Login {}, class: "btn btn-primary", "Sign in" }
+                        }
+                    }
+                }
+                div { class: "content",
+                    Outlet::<Route> {}
                 }
             }
-            button {
-                class: "btn btn-ghost",
-                onclick: move |_| {
-                    let open = !*queue_open.read();
-                    queue_open.set(open);
-                    queue_len.set(queue::len());
-                },
-                "Queue ({queue_len()})"
-            }
-            div { class: "nav-user",
-                if let Some(u) = user() {
-                    Link { to: Route::Settings {}, "{u.username}" }
-                } else {
-                    Link { to: Route::Login {}, class: "btn btn-primary", "Sign in" }
-                }
-            }
+            PlayerSidebar {}
         }
-        div { class: "content",
-            Outlet::<Route> {}
-        }
-        QueuePanel {}
+        PlayChoiceModal {}
     }
 }
 

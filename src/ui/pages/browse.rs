@@ -1,7 +1,11 @@
 use crate::models::{FeedParams, VideoSort, VideoSummary};
+use crate::services::player::trim_front;
 use crate::services::pmv::shared_client;
 use crate::ui::pages::components::VideoGrid;
 use dioxus::prelude::*;
+
+/// Keep at most ~3 pages of cards mounted while browsing.
+const MAX_BROWSE_ITEMS: usize = 96;
 
 fn parse_sort(s: &str) -> VideoSort {
     match s {
@@ -112,6 +116,7 @@ pub fn Browse(sort: Option<String>, tags: Option<String>, creator: Option<String
                                 Ok(paged) => {
                                     let mut cur = items();
                                     cur.extend(paged.items);
+                                    trim_front(&mut cur, MAX_BROWSE_ITEMS);
                                     items.set(cur);
                                     has_next.set(paged.pagination.has_next);
                                     page.set(next);

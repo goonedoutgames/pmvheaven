@@ -34,7 +34,16 @@ fn main() {
         .with_cfg(
             Config::new()
                 .with_window(window)
-                .with_disable_context_menu(true),
+                .with_disable_context_menu(true)
+                // Hint WebKit/GStreamer toward hardware decode when available.
+                .with_custom_head(
+                    r#"<meta name="color-scheme" content="dark">
+                    <style>
+                      html, body { background: #0c0e12; }
+                      video { transform: translateZ(0); }
+                    </style>"#
+                    .into(),
+                ),
         )
         .launch(app::App);
 }

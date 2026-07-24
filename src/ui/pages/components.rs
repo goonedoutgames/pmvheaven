@@ -1,4 +1,5 @@
-use crate::models::{AccountUser, VideoSummary};
+use crate::models::{AccountUser, PlayableVideo, VideoSummary};
+use crate::services::player::{self, OpenIntent};
 use crate::services::queue;
 use crate::services::repo::watched_progress_map;
 use crate::ui::nav::Route;
@@ -27,9 +28,15 @@ pub fn VideoCard(video: VideoSummary) -> Element {
     let mut queue_tick = use_context::<Signal<u32>>();
     let watched_map = use_context::<Signal<HashMap<String, f64>>>();
     let user = use_context::<Signal<Option<AccountUser>>>();
+    let now_playing = use_context::<Signal<Option<PlayableVideo>>>();
+    let mut play_choice = use_context::<Signal<Option<VideoSummary>>>();
+    let navigator = use_navigator();
     let mut hovering = use_signal(|| false);
     let id = video.id.clone();
-    let queued = queue::is_queued(&id);
+    let queued = {
+        let _ = queue_tick();
+        queue::is_queued(&id)
+    };
     let preview = video.preview_url.clone();
     let has_preview = preview.as_ref().map(|p| !p.is_empty()).unwrap_or(false);
     let video_el_id = format!("preview-{}", video.id);
@@ -38,99 +45,103 @@ pub fn VideoCard(video: VideoSummary) -> Element {
     let is_watched = signed_in && progress.is_some();
     let rating = video.rating;
 
+    let open_from_thumb = {
+        let video = video.clone();
+        move |_| {
+            match player::open_intent(&video, now_playing) {
+                OpenIntent::Play | OpenIntent::AlreadyPlaying => {
+                    navigator.push(Route::Watch { id: video.id.clone() });
+                }
+                OpenIntent::Choice(v) => {
+                    play_choice.set(Some(v));
+                }
+            }
+        }
+    };
+    let open_from_title = {
+        let video = video.clone();
+        move |_| {
+            match player::open_intent(&video, now_playing) {
+                OpenIntent::Play | OpenIntent::AlreadyPlaying => {
+                    navigator.push(Route::Watch { id: video.id.clone() });
+                }
+                OpenIntent::Choice(v) => {
+                    play_choice.set(Some(v));
+                }
+            }
+        }
+    };
+
+    let playing = now_playing().is_some();
+    let allow_preview = has_preview && !playing;
+
     rsx! {
         div {
             class: if is_watched { "video-card is-watched" } else { "video-card" },
-            onmouseenter: {
-                let el_id = video_el_id.clone();
-                move |_| {
-                    hovering.set(true);
-                    if has_preview {
-                        let id = el_id.clone();
-                        spawn(async move {
-                            let _ = document::eval(&format!(
-                                r#"(function(){{
-                                  const el = document.getElementById({id:?});
-                                  if (!el) return;
-                                  el.currentTime = 0;
-                                  el.play().catch(()=>{{}});
-                                }})()"#
-                            )).await;
-                        });
+            onmouseenter: move |_| {
+                hovering.set(true);
+            },
+            onmouseleave: move |_| {
+                hovering.set(false);
+            },
+            div {
+                class: "thumb-wrap",
+                onclick: open_from_thumb,
+                if !video.thumbnail_url.is_empty() {
+                    img {
+                        class: if hovering() && allow_preview { "thumb dim" } else { "thumb" },
+                        src: "{video.thumbnail_url}",
+                        alt: "{video.title}",
+                        loading: "lazy",
                     }
                 }
-            },
-            onmouseleave: {
-                let el_id = video_el_id.clone();
-                move |_| {
-                    hovering.set(false);
-                    if has_preview {
-                        let id = el_id.clone();
-                        spawn(async move {
-                            let _ = document::eval(&format!(
-                                r#"(function(){{
-                                  const el = document.getElementById({id:?});
-                                  if (!el) return;
-                                  el.pause();
-                                }})()"#
-                            )).await;
-                        });
-                    }
-                }
-            },
-            Link { to: Route::Watch { id: video.id.clone() },
-                div { class: "thumb-wrap",
-                    if !video.thumbnail_url.is_empty() {
-                        img {
-                            class: if hovering() && has_preview { "thumb dim" } else { "thumb" },
-                            src: "{video.thumbnail_url}",
-                            alt: "{video.title}",
-                            loading: "lazy",
-                        }
-                    }
+                if hovering() && allow_preview {
                     if let Some(src) = preview.clone() {
                         if !src.is_empty() {
                             video {
                                 id: "{video_el_id}",
-                                class: if hovering() { "preview-video show" } else { "preview-video" },
+                                class: "preview-video show",
                                 src: "{src}",
                                 muted: true,
+                                autoplay: true,
                                 r#loop: true,
                                 playsinline: true,
-                                preload: "none",
+                                preload: "metadata",
                             }
                         }
                     }
-                    div { class: "thumb-badges",
-                        if is_watched {
-                            span { class: "badge watched",
-                                span { class: "badge-check", "✓" }
-                                "Watched"
-                            }
-                        }
-                        if rating > 0.0 {
-                            span { class: "{rating_class(rating)}",
-                                "★ {rating.round() as i32}%"
-                            }
+                }
+                div { class: "thumb-badges",
+                    if is_watched {
+                        span { class: "badge watched",
+                            span { class: "badge-check", "✓" }
+                            "Watched"
                         }
                     }
-                    if !video.duration.is_empty() {
-                        span { class: "duration", "{video.duration}" }
+                    if rating > 0.0 {
+                        span { class: "{rating_class(rating)}",
+                            "★ {rating.round() as i32}%"
+                        }
                     }
-                    if let Some(p) = progress {
-                        if p > 0.0 {
-                            span { class: "progress-track",
-                                span {
-                                    class: "progress-fill",
-                                    style: "width: {((p * 100.0).clamp(0.0, 100.0))}%;",
-                                }
+                }
+                if !video.duration.is_empty() {
+                    span { class: "duration", "{video.duration}" }
+                }
+                if let Some(p) = progress {
+                    if p > 0.0 {
+                        span { class: "progress-track",
+                            span {
+                                class: "progress-fill",
+                                style: "width: {((p * 100.0).clamp(0.0, 100.0))}%;",
                             }
                         }
                     }
                 }
             }
-            Link { to: Route::Watch { id: video.id.clone() },
-                div { class: "card-title", "{video.title}" }
+            div {
+                class: "card-title",
+                onclick: open_from_title,
+                "{video.title}"
             }
             div { class: "card-meta",
                 "{video.uploader_username} · {format_views(video.views)}"
@@ -179,97 +190,6 @@ pub fn VideoGrid(items: Vec<VideoSummary>) -> Element {
         div { class: "grid",
             for v in items {
                 VideoCard { video: v }
-            }
-        }
-    }
-}
-
-#[component]
-pub fn QueuePanel() -> Element {
-    let open = use_context::<Signal<bool>>();
-    let mut tick = use_context::<Signal<u32>>();
-    let items = use_memo(move || {
-        let _ = tick();
-        queue::snapshot().items
-    });
-    let mut now_playing = use_context::<Signal<Option<VideoSummary>>>();
-    let navigator = use_navigator();
-
-    rsx! {
-        aside { class: if open() { "queue-panel open" } else { "queue-panel" },
-            div { class: "queue-header",
-                h3 { style: "margin:0;", "Queue ({items().len()})" }
-                button {
-                    class: "btn btn-ghost",
-                    onclick: move |_| {
-                        queue::clear();
-                        tick.set(tick() + 1);
-                    },
-                    "Clear"
-                }
-            }
-            div { class: "queue-list",
-                if items().is_empty() {
-                    p { class: "muted", style: "padding:1rem;", "Queue is empty" }
-                } else {
-                    for (i, v) in items().into_iter().enumerate() {
-                        div { class: "queue-item", key: "{v.id}-{i}",
-                            img { src: "{v.thumbnail_url}", alt: "" }
-                            div { class: "meta",
-                                div { class: "t", "{v.title}" }
-                                div { class: "card-meta",
-                                    "{v.uploader_username}"
-                                    if v.rating > 0.0 {
-                                        " · ★ {v.rating.round() as i32}%"
-                                    }
-                                }
-                            }
-                            button {
-                                class: "icon-btn",
-                                onclick: {
-                                    let id = v.id.clone();
-                                    let vid = v.clone();
-                                    move |_| {
-                                        queue::remove(&id);
-                                        now_playing.set(Some(vid.clone()));
-                                        tick.set(tick() + 1);
-                                        navigator.push(Route::Watch { id: id.clone() });
-                                    }
-                                },
-                                "Play"
-                            }
-                            button {
-                                class: "icon-btn",
-                                onclick: {
-                                    let id = v.id.clone();
-                                    move |_| {
-                                        queue::remove(&id);
-                                        tick.set(tick() + 1);
-                                    }
-                                },
-                                "✕"
-                            }
-                            if i > 0 {
-                                button {
-                                    class: "icon-btn",
-                                    onclick: move |_| {
-                                        queue::move_item(i, i - 1);
-                                        tick.set(tick() + 1);
-                                    },
-                                    "↑"
-                                }
-                            }
-                            button {
-                                class: "icon-btn",
-                                onclick: move |_| {
-                                    queue::move_item(i, i + 1);
-                                    tick.set(tick() + 1);
-                                },
-                                "↓"
-                            }
-                        }
-                    }
-                }
             }
         }
     }

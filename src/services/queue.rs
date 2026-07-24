@@ -54,7 +54,7 @@ pub fn remove(id: &str) {
 
 pub fn move_item(from: usize, to: usize) {
     let mut q = QUEUE.lock().unwrap();
-    if from >= q.items.len() || to >= q.items.len() {
+    if from >= q.items.len() || to >= q.items.len() || from == to {
         return;
     }
     let item = q.items.remove(from);
@@ -74,6 +74,15 @@ pub fn shift() -> Option<VideoSummary> {
         return None;
     }
     let item = q.items.remove(0);
+    persist(&q);
+    Some(item)
+}
+
+/// Remove a single item by id and return it (rest of the queue stays intact).
+pub fn take(id: &str) -> Option<VideoSummary> {
+    let mut q = QUEUE.lock().unwrap();
+    let pos = q.items.iter().position(|v| v.id == id)?;
+    let item = q.items.remove(pos);
     persist(&q);
     Some(item)
 }

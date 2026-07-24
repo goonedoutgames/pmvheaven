@@ -43,6 +43,10 @@ pub fn queue_path() -> PathBuf {
     app_data_dir().join("queue.json")
 }
 
+pub fn now_playing_path() -> PathBuf {
+    app_data_dir().join("now_playing.json")
+}
+
 /// True when a legacy v1 database is still present (prompt to remove; no migration).
 pub fn has_legacy_db() -> bool {
     v1_db_path().exists()

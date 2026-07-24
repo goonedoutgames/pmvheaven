@@ -220,6 +220,9 @@ pub async fn start_proxy() -> anyhow::Result<(String, oneshot::Sender<()>)> {
 }
 
 pub fn proxied_url(proxy_base: &str, media_url: &str) -> String {
+    if proxy_base.is_empty() || media_url.is_empty() {
+        return String::new();
+    }
     format!(
         "{proxy_base}/stream?url={}",
         urlencoding_encode(media_url)

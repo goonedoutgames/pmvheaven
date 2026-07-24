@@ -68,6 +68,28 @@ pub struct VideoDetail {
     pub is_watch_later: bool,
 }
 
+/// Streamable payload for the persistent player rail (survives route changes).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct PlayableVideo {
+    pub summary: VideoSummary,
+    pub video_url: String,
+    pub hls_master_playlist_url: Option<String>,
+    pub hls_enabled: bool,
+    pub watch_progress: f64,
+}
+
+impl From<&VideoDetail> for PlayableVideo {
+    fn from(d: &VideoDetail) -> Self {
+        Self {
+            summary: d.summary.clone(),
+            video_url: d.video_url.clone(),
+            hls_master_playlist_url: d.hls_master_playlist_url.clone(),
+            hls_enabled: d.hls_enabled,
+            watch_progress: d.watch_progress,
+        }
+    }
+}
+
 impl VideoDetail {
     pub fn id(&self) -> &str {
         &self.summary.id
