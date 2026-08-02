@@ -27,6 +27,9 @@ env:
   CARGO_TERM_COLOR: always
   # Avoid linuxdeploy strip failures on CI AppImages.
   NO_STRIP: "true"
+  # Must match the `dioxus` crate in Cargo.lock (dx warns / can misbehave otherwise).
+  # Prebuilt dx binaries need a recent glibc — use ubuntu-24.04 for Linux builds.
+  DX_VERSION: "0.7.9"
 
 jobs:
   version:
@@ -76,7 +79,9 @@ jobs:
     name: Build Linux AppImage
     needs: version
     if: needs.version.outputs.should_release == 'true'
-    runs-on: ubuntu-22.04
+    # 24.04 ships glibc ≥ 2.39; prebuilt `dx` from binstall is linked against that.
+    # (22.04 fails with: version `GLIBC_2.39' not found)
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -98,15 +103,20 @@ jobs:
             librsvg2-dev \
             patchelf \
             libxdo-dev \
-            fuse libfuse2 \
+            fuse \
             wget
+          # Package name varies across Ubuntu releases (t64 transition on 24.04).
+          sudo apt-get install -y libfuse2t64 || sudo apt-get install -y libfuse2
 
       - uses: cargo-bins/cargo-binstall@main
 
       - name: Install dioxus-cli
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: cargo binstall dioxus-cli -y --force --disable-strategies compile
+        run: |
+          set -euo pipefail
+          cargo binstall "dioxus-cli@${DX_VERSION}" -y --force --disable-strategies compile
+          dx --version
 
       - name: Bundle AppImage
         run: dx bundle --platform desktop --release --package-types appimage
@@ -162,7 +172,10 @@ jobs:
         shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: cargo binstall dioxus-cli -y --force --disable-strategies compile
+        run: |
+          set -euo pipefail
+          cargo binstall "dioxus-cli@${DX_VERSION}" -y --force --disable-strategies compile
+          dx --version
 
       - name: Bundle NSIS installer
         shell: bash
