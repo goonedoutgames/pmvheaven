@@ -4,10 +4,25 @@ mod paths;
 mod services;
 mod ui;
 
+#[cfg(target_os = "linux")]
+mod linux_gfx;
+
+use dioxus::desktop::tao::window::Icon;
 use dioxus::desktop::{Config, WindowBuilder};
 use dioxus::prelude::*;
 
+fn window_icon() -> Option<Icon> {
+    // 256×256 RGBA baked from assets/app-icon-256.png (no runtime image crate).
+    const RGBA: &[u8] = include_bytes!("../assets/app-icon-256.rgba");
+    Icon::from_rgba(RGBA.to_vec(), 256, 256).ok()
+}
+
 fn main() {
+    // Must run before WebKit/GTK init so child WebKitWebProcess inherits flags,
+    // and so we can re-exec with LD_PRELOAD of the system Wayland client.
+    #[cfg(target_os = "linux")]
+    linux_gfx::prepare();
+
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -24,26 +39,29 @@ fn main() {
     services::crypto::ensure_key();
     services::queue::load_queue();
 
-    let window = WindowBuilder::new()
+    let mut window = WindowBuilder::new()
         .with_title("PMVHeaven")
         .with_decorations(false)
         .with_inner_size(dioxus::desktop::tao::dpi::LogicalSize::new(1280.0, 800.0))
         .with_min_inner_size(dioxus::desktop::tao::dpi::LogicalSize::new(900.0, 600.0));
+    if let Some(icon) = window_icon() {
+        window = window.with_window_icon(Some(icon));
+    }
 
-    LaunchBuilder::desktop()
-        .with_cfg(
-            Config::new()
-                .with_window(window)
-                .with_disable_context_menu(true)
-                // Hint WebKit/GStreamer toward hardware decode when available.
-                .with_custom_head(
-                    r#"<meta name="color-scheme" content="dark">
+    let mut cfg = Config::new()
+        .with_window(window)
+        .with_disable_context_menu(true)
+        .with_custom_head(
+            r#"<meta name="color-scheme" content="dark">
                     <style>
                       html, body { background: #0c0e12; }
                       video { transform: translateZ(0); }
                     </style>"#
-                    .into(),
-                ),
-        )
-        .launch(app::App);
+            .into(),
+        );
+    if let Some(icon) = window_icon() {
+        cfg = cfg.with_icon(icon);
+    }
+
+    LaunchBuilder::desktop().with_cfg(cfg).launch(app::App);
 }

@@ -6,3 +6,4 @@ pub mod queue;
 pub mod repo;
 pub mod stream_proxy;
 pub mod sync;
+pub mod updates;

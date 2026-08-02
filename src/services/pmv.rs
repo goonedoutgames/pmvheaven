@@ -261,27 +261,18 @@ impl PmvClient {
     }
 
     pub async fn get_videos(&self, params: FeedParams) -> Result<Paged<VideoSummary>> {
-        let mut owned: Vec<(String, String)> = vec![
-            ("page".into(), params.page.unwrap_or(1).to_string()),
-            ("limit".into(), params.limit.unwrap_or(32).to_string()),
-        ];
-        if let Some(s) = params.sort {
-            owned.push(("sort".into(), s.as_api().to_string()));
-        }
-        if let Some(t) = params.tags {
-            owned.push(("tags".into(), t));
-        }
-        if let Some(c) = params.creator {
-            owned.push(("creator".into(), c));
-        }
-        if let Some(u) = params.uploader {
-            owned.push(("uploader".into(), u));
-        }
+        let owned = params.to_query();
+        let auth = is_connected()
+            && (params.watched_only
+                || params.favorites_only
+                || params.subscribed_only
+                || params.personalized_only
+                || params.exclude_watched);
 
         let mut req = self
             .http
             .get(format!("{BASE}/videos"))
-            .headers(self.headers(false, false));
+            .headers(self.headers(auth, false));
         for (k, v) in &owned {
             req = req.query(&[(k.as_str(), v.as_str())]);
         }
@@ -514,8 +505,23 @@ impl PmvClient {
         Ok(())
     }
 
+    /// Bump remote view + add to PMVHaven watch history (authenticated when possible).
     pub async fn record_view(&self, id: &str) {
         let auth = is_connected();
+        // Site player: POST /api/videos/:id/view
+        let _ = self
+            .raw_request(
+                &format!("/videos/{id}/view"),
+                reqwest::Method::POST,
+                auth,
+                &[],
+                Some(serde_json::json!({
+                    "source": "pmvheaven-desktop",
+                    "referrer": "app",
+                })),
+            )
+            .await;
+        // Legacy fallback used by v1.
         let _ = self
             .raw_request(
                 &format!("/videos/{id}"),
@@ -525,6 +531,33 @@ impl PmvClient {
                 None,
             )
             .await;
+    }
+
+    /// Push watch progress to PMVHaven (`PUT /api/users/watch-progress`).
+    /// `progress_pct` is 0–100 (site convention); `duration_secs` is video length.
+    pub async fn push_watch_progress(
+        &self,
+        video_id: &str,
+        progress_pct: u32,
+        duration_secs: u32,
+    ) -> Result<()> {
+        if !is_connected() {
+            return Err(PmvError::Msg("Not signed in".into()));
+        }
+        let pct = progress_pct.min(100);
+        self.request_json(
+            "/users/watch-progress",
+            reqwest::Method::PUT,
+            true,
+            &[],
+            Some(serde_json::json!({
+                "videoId": video_id,
+                "progress": pct,
+                "duration": duration_secs,
+            })),
+        )
+        .await?;
+        Ok(())
     }
 }
 

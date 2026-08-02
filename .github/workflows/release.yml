@@ -1,0 +1,256 @@
+name: Release
+
+# Builds Linux AppImage + Windows NSIS installer, then creates a GitHub Release
+# tagged from Cargo.toml's version (e.g. 2.0.0 → v2.0.0).
+#
+# Skips when that tag/release already exists so docs-only pushes to main are cheap.
+# Bump `[package].version` in Cargo.toml to cut a new release.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Rebuild and recreate the release for the current Cargo.toml version"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # Avoid linuxdeploy strip failures on CI AppImages.
+  NO_STRIP: "true"
+
+jobs:
+  version:
+    name: Resolve version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      tag: ${{ steps.meta.outputs.tag }}
+      should_release: ${{ steps.meta.outputs.should_release }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read Cargo.toml version
+        id: meta
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FORCE: ${{ github.event_name == 'workflow_dispatch' && inputs.force || false }}
+        run: |
+          set -euo pipefail
+          VERSION="$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n1)"
+          if [[ -z "$VERSION" ]]; then
+            echo "Could not parse version from Cargo.toml" >&2
+            exit 1
+          fi
+          TAG="v${VERSION}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+          EXISTS=false
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            EXISTS=true
+          elif git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
+            EXISTS=true
+          fi
+
+          if [[ "$EXISTS" == "true" && "$FORCE" != "true" ]]; then
+            echo "Release ${TAG} already exists — skipping build."
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Will publish ${TAG}"
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  build-linux:
+    name: Build Linux AppImage
+    needs: version
+    if: needs.version.outputs.should_release == 'true'
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: linux-release
+
+      - name: Install Linux desktop deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            pkg-config \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libxdo-dev \
+            fuse libfuse2 \
+            wget
+
+      - uses: cargo-bins/cargo-binstall@main
+
+      - name: Install dioxus-cli
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: cargo binstall dioxus-cli -y --force --disable-strategies compile
+
+      - name: Bundle AppImage
+        run: dx bundle --platform desktop --release --package-types appimage
+
+      - name: Wayland AppImage post-process
+        run: |
+          chmod +x scripts/fix-appimage-wayland.sh
+          ./scripts/fix-appimage-wayland.sh || true
+          # Prefer the post-processed file if the script wrote a new one next to it.
+          ls -la target/dx/pmvheaven/bundle/linux/appimage/ || true
+
+      - name: Stage artifact
+        id: stage
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.version.outputs.version }}"
+          mkdir -p dist
+          SRC="$(find target/dx -type f -name '*.AppImage' | head -n1)"
+          if [[ -z "$SRC" ]]; then
+            echo "No AppImage produced" >&2
+            find target/dx -type f | head -100 >&2 || true
+            exit 1
+          fi
+          DEST="dist/PMVHeaven-${VERSION}-x86_64.AppImage"
+          cp "$SRC" "$DEST"
+          chmod +x "$DEST"
+          echo "file=${DEST}" >> "$GITHUB_OUTPUT"
+          ls -lh dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-appimage
+          path: dist/*.AppImage
+          if-no-files-found: error
+
+  build-windows:
+    name: Build Windows installer
+    needs: version
+    if: needs.version.outputs.should_release == 'true'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: windows-release
+
+      - uses: cargo-bins/cargo-binstall@main
+
+      - name: Install dioxus-cli
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: cargo binstall dioxus-cli -y --force --disable-strategies compile
+
+      - name: Bundle NSIS installer
+        shell: bash
+        run: dx bundle --platform desktop --release --package-types nsis
+
+      - name: Stage artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.version.outputs.version }}"
+          mkdir -p dist
+          # NSIS usually produces *setup*.exe under the bundle tree.
+          SRC="$(find target/dx -type f \( -iname '*setup*.exe' -o -iname '*.exe' \) ! -path '*/deps/*' | head -n1)"
+          if [[ -z "$SRC" ]]; then
+            echo "No Windows installer exe produced" >&2
+            find target/dx -type f | head -200 >&2 || true
+            exit 1
+          fi
+          DEST="dist/PMVHeaven-${VERSION}-x86_64-setup.exe"
+          cp "$SRC" "$DEST"
+          ls -lh dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: dist/*.exe
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs: [version, build-linux, build-windows]
+    if: needs.version.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Collect release assets
+        id: assets
+        run: |
+          set -euo pipefail
+          find artifacts -type f -print
+          mapfile -t FILES < <(find artifacts -type f \( -name '*.AppImage' -o -name '*.exe' \) | sort)
+          if [[ ${#FILES[@]} -lt 1 ]]; then
+            echo "No release assets downloaded" >&2
+            exit 1
+          fi
+          {
+            echo "files<<EOF"
+            printf '%s\n' "${FILES[@]}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create or update release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.version.outputs.tag }}
+          VERSION: ${{ needs.version.outputs.version }}
+          FORCE: ${{ github.event_name == 'workflow_dispatch' && inputs.force || false }}
+        run: |
+          set -euo pipefail
+          mapfile -t FILES < <(find artifacts -type f \( -name '*.AppImage' -o -name '*.exe' \) | sort)
+
+          NOTES=$(printf '%s\n' \
+            "## PMVHeaven ${VERSION}" \
+            "" \
+            "Desktop builds for this release:" \
+            "" \
+            "- **Linux:** \`PMVHeaven-${VERSION}-x86_64.AppImage\`" \
+            "- **Windows:** \`PMVHeaven-${VERSION}-x86_64-setup.exe\`" \
+            "" \
+            "Source version is taken from \`Cargo.toml\`.")
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            if [[ "$FORCE" == "true" ]]; then
+              gh release delete "$TAG" --yes --cleanup-tag || true
+            else
+              echo "Release already exists and force=false" >&2
+              exit 1
+            fi
+          fi
+
+          gh release create "$TAG" "${FILES[@]}" \
+            --title "PMVHeaven ${VERSION}" \
+            --notes "$NOTES" \
+            --target "${{ github.sha }}"

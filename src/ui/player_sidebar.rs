@@ -11,6 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 static LAST_HIST_MS: AtomicU64 = AtomicU64::new(0);
 static LAST_SAVE_MS: AtomicU64 = AtomicU64::new(0);
+static LAST_PUSH_MS: AtomicU64 = AtomicU64::new(0);
 /// Last known playback position (ms) — updated without reactive signal churn.
 static LAST_POS_MS: AtomicU64 = AtomicU64::new(0);
 
@@ -229,7 +230,8 @@ pub fn PlayerSidebar() -> Element {
                             if !has_url {
                                 div { class: "player-error", "No stream URL for this video." }
                             } else {
-                                // No `src` here — attached in JS on id change only (v1 pattern).
+                                // No `src` / no title attr — src is JS-bound; title would
+                                // show a browser tooltip over the player (v1 avoided this).
                                 video {
                                     key: "{id}",
                                     id: "pmv-player",
@@ -238,7 +240,6 @@ pub fn PlayerSidebar() -> Element {
                                     controls: true,
                                     playsinline: true,
                                     preload: "auto",
-                                    "title": "{title}",
                                 }
                             }
                             button {
@@ -416,9 +417,7 @@ async fn handle_player_msg(
     watched_map: &mut Signal<HashMap<String, f64>>,
 ) {
     if raw == "ended" {
-        if player_fs() {
-            set_fullscreen_mode(false, player_fs);
-        }
+        // v1 keeps fullscreen across queue advances — do not exit FS here.
         advance_queue(now_playing, start_at, queue_tick).await;
         return;
     }
@@ -477,7 +476,7 @@ async fn handle_player_msg(
             if let Some(summary) = get_cached_summary(&vid) {
                 upsert_history(
                     &HistoryEntry {
-                        video: summary,
+                        video: summary.clone(),
                         watched_at: chrono::Utc::now().to_rfc3339(),
                         progress,
                     },
@@ -488,7 +487,20 @@ async fn handle_player_msg(
             let cur = watched_map.peek().get(&vid).copied().unwrap_or(-1.0);
             if (cur - progress).abs() >= 0.02 {
                 watched_map.with_mut(|m| {
-                    m.insert(vid, progress);
+                    m.insert(vid.clone(), progress);
+                });
+            }
+
+            // Backfill progress to PMVHaven when signed in.
+            let last_push = LAST_PUSH_MS.load(Ordering::Relaxed);
+            if now_ms.saturating_sub(last_push) >= 20_000 {
+                LAST_PUSH_MS.store(now_ms, Ordering::Relaxed);
+                let id = vid.clone();
+                let pct = (progress * 100.0).round().clamp(1.0, 100.0) as u32;
+                let dur = playable.summary.duration_seconds.max(1);
+                spawn(async move {
+                    let client = crate::services::pmv::shared_client();
+                    let _ = client.push_watch_progress(&id, pct, dur).await;
                 });
             }
         }

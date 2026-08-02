@@ -256,3 +256,88 @@ pub async fn sync_watch_history() -> SyncResult {
         }
     }
 }
+
+/// Push local SQLite watch history up to PMVHaven (`PUT /users/watch-progress`).
+pub async fn push_local_history() -> SyncResult {
+    if !is_connected() {
+        return SyncResult {
+            status: "skipped".into(),
+            new_count: 0,
+            seen_count: 0,
+            total_retained: 0,
+            message: Some("Not connected".into()),
+        };
+    }
+    if RUNNING
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        return SyncResult {
+            status: "skipped".into(),
+            new_count: 0,
+            seen_count: 0,
+            total_retained: 0,
+            message: Some("Sync already running".into()),
+        };
+    }
+
+    set_progress(SyncProgress {
+        phase: "pushing".into(),
+        processed: 0,
+        total: 0,
+        new_count: 0,
+        total_retained: 0,
+        message: Some("Pushing local history to PMVHaven…".into()),
+    });
+
+    let (entries, total) = crate::services::repo::get_history_page(1, 500);
+    let total_u = total.max(entries.len() as u64);
+    let client = shared_client();
+    let mut pushed = 0u64;
+    let mut failed = 0u64;
+
+    for (i, entry) in entries.iter().enumerate() {
+        let pct = (entry.progress * 100.0).round().clamp(1.0, 100.0) as u32;
+        let dur = entry.video.duration_seconds.max(1);
+        match client
+            .push_watch_progress(&entry.video.id, pct, dur)
+            .await
+        {
+            Ok(()) => {
+                pushed += 1;
+                // Also bump view once so it lands in remote watchHistory.
+                client.record_view(&entry.video.id).await;
+            }
+            Err(_) => failed += 1,
+        }
+        if i % 5 == 0 {
+            set_progress(SyncProgress {
+                phase: "pushing".into(),
+                processed: (i + 1) as u64,
+                total: total_u,
+                new_count: pushed,
+                total_retained: total_u,
+                message: Some(format!("Pushed {pushed}…")),
+            });
+            tokio::time::sleep(std::time::Duration::from_millis(40)).await;
+        }
+    }
+
+    RUNNING.store(false, Ordering::SeqCst);
+    set_progress(SyncProgress {
+        phase: "done".into(),
+        processed: entries.len() as u64,
+        total: total_u,
+        new_count: pushed,
+        total_retained: total_u,
+        message: None,
+    });
+
+    SyncResult {
+        status: if failed == 0 { "ok".into() } else { "partial".into() },
+        new_count: pushed,
+        seen_count: failed,
+        total_retained: total_u,
+        message: Some(format!("Pushed {pushed}, failed {failed}")),
+    }
+}

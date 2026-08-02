@@ -4,10 +4,10 @@ Ad-free desktop client for [PMVHaven](https://pmvhaven.com), rewritten in **Rust
 
 ## Features
 
-- **Browse & discover** — trending, top-rated, newest, popular tags, infinite scroll
+- **Browse & discover** — site-parity filters (sort, tags, models, music, creator, duration/rating/views, content chips), trending home, infinite scroll
 - **Search** — authenticated search with tag fallback when signed out
 - **Playback** — HTML5 video in the system WebView, HLS via vendored `hls.js`, Rust localhost media proxy (SSRF-guarded)
-- **Permanent watch history** — SQLite archive that never prunes; pull-sync from PMVHaven session history
+- **Permanent watch history** — SQLite archive; pull from PMVHaven session + push local watches back via `/users/watch-progress`
 - **Play queue** — add / play next / reorder / clear; persisted to `queue.json`
 - **Favorites & Watch Later** — local mirror with remote write-back
 - **Custom chrome** — undecorated window with brand logo and `sexy_close.svg`
@@ -43,7 +43,39 @@ On Linux this produces an AppImage under:
 
 `target/dx/pmvheaven/bundle/linux/appimage/pmvheaven_2.0.0_x86_64.AppImage`
 
+Post-process for rolling-release Wayland hosts (strips bundled `libwayland*`, installs an AppRun wrapper):
+
+```bash
+./scripts/fix-appimage-wayland.sh
+```
+
 No Node runtime is bundled. Windows builds use the same command on a Windows host (MSI/NSIS via the Dioxus bundler).
+
+## Releases (CI)
+
+Pushes to `main` run [`.github/workflows/release.yml`](.github/workflows/release.yml):
+
+1. Read semver from `Cargo.toml` (`2.0.0` → tag `v2.0.0`)
+2. Skip if that GitHub Release already exists (bump the Cargo version to cut a new one)
+3. Build **Linux AppImage** + **Windows NSIS `.exe` installer**
+4. Publish a GitHub Release with both artifacts
+
+Manual re-run: Actions → **Release** → **Run workflow** (optionally force recreate).
+
+On launch the app checks `goonedoutgames/pmvheaven` for a newer release and offers a download link when one is available.
+
+### Linux graphics A/B (`PMV_GFX`)
+
+On Wayland + AppImage (or any Linux build), the app defaults to **system `libwayland-client` preload** and leaves WebKit’s DMA-BUF renderer on — usually the best video FPS.
+
+| Mode | Command | Behavior |
+|------|---------|----------|
+| `wayland` (default) | `PMV_GFX=wayland ./…AppImage` | System Wayland preload, DMABUF **on** |
+| `dmabuf-off` | `PMV_GFX=dmabuf-off ./…AppImage` | Preload + `WEBKIT_DISABLE_DMABUF_RENDERER=1` |
+| `soft` | `PMV_GFX=soft ./…AppImage` | Preload + DMABUF + compositing off (slowest) |
+| `stock` | `PMV_GFX=stock ./…AppImage` | No fixes (baseline / protocol-error repro) |
+
+Startup prints which mode is active on stderr. Compare fullscreen playback FPS between `wayland` and `dmabuf-off` on your machine.
 
 ## Data
 

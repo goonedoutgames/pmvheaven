@@ -63,7 +63,7 @@ fn AppLayout() -> Element {
                     }
                     div { class: "nav-links",
                         Link { to: Route::Home {}, class: "nav-link", "Home" }
-                        Link { to: Route::Browse { sort: Some("-uploadDate".into()), tags: None, creator: None }, class: "nav-link", "Browse" }
+                        Link { to: Route::Browse { sort: Some("-releaseDate".into()), tags: None, creator: None }, class: "nav-link", "Browse" }
                         Link { to: Route::History {}, class: "nav-link nav-hide-sm", "History" }
                         Link { to: Route::Favorites {}, class: "nav-link nav-hide-sm", "Favorites" }
                         Link { to: Route::WatchLater {}, class: "nav-link nav-hide-md", "Later" }

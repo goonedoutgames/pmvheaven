@@ -85,7 +85,7 @@ pub fn Watch(id: String) -> Element {
                             p { class: "muted",
                                 Link {
                                     to: Route::Browse {
-                                        sort: Some("-uploadDate".into()),
+                                        sort: Some("-releaseDate".into()),
                                         tags: None,
                                         creator: Some(d.summary.uploader_username.clone()),
                                     },

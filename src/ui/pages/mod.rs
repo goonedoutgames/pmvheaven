@@ -1,5 +1,6 @@
 mod home;
 mod browse;
+mod browse_filters;
 mod search;
 mod watch;
 mod history;

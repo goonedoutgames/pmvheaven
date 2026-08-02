@@ -1,10 +1,27 @@
-/target
-.DS_Store
-**/*.rs.bk
+# Rust / Cargo
+/target/
+**/target/
+
+# Dioxus
+.dioxus/
+dist/
+target/dx/
+
+# AppImage extract leftovers
+squashfs-root/
+*.AppDir/
+
+# Local / secrets
 /data
 *.db
 *.db-*
 .env
-.dioxus
-dist/
 temp-creds.tmp.conf
+
+# OS / editor
+.DS_Store
+**/*.rs.bk
+*.swp
+*.swo
+.idea/
+.vscode/

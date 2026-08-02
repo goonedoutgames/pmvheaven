@@ -6,6 +6,7 @@ use crate::services::stream_proxy;
 use crate::ui::chrome::{MAIN_CSS, HLS_JS, WindowChrome};
 use crate::ui::legacy_gate::LegacyDbGate;
 use crate::ui::nav::Route;
+use crate::ui::update_prompt::UpdatePrompt;
 use dioxus::prelude::*;
 
 #[component]
@@ -61,6 +62,7 @@ pub fn App() -> Element {
                 div { class: "app-body",
                     Router::<Route> {}
                 }
+                UpdatePrompt {}
             }
         }
     }

@@ -14,7 +14,15 @@ script = []
 [bundle]
 identifier = "com.pmvheaven.desktop"
 publisher = "PMVHeaven"
-icon = ["assets/logo.png"]
+# Multiple sizes so Linux hicolor + Windows installer pick up a real app icon
+# (logo.png alone often falls back to the Dioxus default).
+icon = [
+  "assets/app-icon-32.png",
+  "assets/app-icon-128.png",
+  "assets/app-icon-256.png",
+  "assets/app-icon-512.png",
+  "assets/app-icon-1024.png",
+]
 category = "Entertainment"
 short_description = "Ad-free PMVHaven desktop client"
 long_description = "Native-ish Rust desktop client for PMVHaven with permanent local watch history."

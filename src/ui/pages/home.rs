@@ -1,7 +1,7 @@
 use crate::models::{FeedParams, PopularTag, VideoSort, VideoSummary};
 use crate::services::pmv::shared_client;
 use crate::ui::nav::Route;
-use crate::ui::pages::components::VideoGrid;
+use crate::ui::pages::components::{format_views, VideoGrid};
 use dioxus::prelude::*;
 
 #[component]
@@ -67,18 +67,21 @@ pub fn Home() -> Element {
             p { class: "error", "{e}" }
         } else {
             if !tags().is_empty() {
-                section { class: "section",
+                section { class: "section tags-section",
                     h2 { "Popular tags" }
                     div { class: "chip-row",
                         for t in tags() {
                             Link {
                                 to: Route::Browse {
-                                    sort: Some("-views".into()),
+                                    sort: Some("-releaseDate".into()),
                                     tags: Some(t.name.clone()),
                                     creator: None,
                                 },
                                 class: "chip",
-                                "{t.name}"
+                                span { "{t.name}" }
+                                if t.usage_count > 0 {
+                                    span { class: "chip-count", "{format_views(t.usage_count)}" }
+                                }
                             }
                         }
                     }

@@ -1,89 +1,93 @@
-use crate::models::{FeedParams, VideoSort, VideoSummary};
+use crate::models::VideoSummary;
 use crate::services::player::trim_front;
 use crate::services::pmv::shared_client;
+use crate::ui::pages::browse_filters::{BrowseFilterPanel, BrowseFilterState};
 use crate::ui::pages::components::VideoGrid;
 use dioxus::prelude::*;
 
 /// Keep at most ~3 pages of cards mounted while browsing.
 const MAX_BROWSE_ITEMS: usize = 96;
 
-fn parse_sort(s: &str) -> VideoSort {
-    match s {
-        "uploadDate" => VideoSort::Oldest,
-        "-views" => VideoSort::MostViews,
-        "views" => VideoSort::LeastViews,
-        "-likes" => VideoSort::MostLiked,
-        "-bayesianRating" => VideoSort::TopRated,
-        _ => VideoSort::Newest,
-    }
-}
-
 #[component]
 pub fn Browse(sort: Option<String>, tags: Option<String>, creator: Option<String>) -> Element {
-    let current_sort = parse_sort(sort.as_deref().unwrap_or("-uploadDate"));
+    let mut filters = use_signal(|| {
+        BrowseFilterState::from_route(sort.as_deref(), tags.as_deref(), creator.as_deref())
+    });
     let mut items = use_signal(|| Vec::<VideoSummary>::new());
     let mut page = use_signal(|| 1u32);
     let mut has_next = use_signal(|| false);
+    let mut total = use_signal(|| 0u64);
     let mut loading = use_signal(|| true);
     let mut err = use_signal(|| None::<String>);
-    let tags_sig = use_signal(|| tags.clone());
-    let creator_sig = use_signal(|| creator.clone());
-    let sort_sig = use_signal(|| current_sort);
+    let mut reload_tick = use_signal(|| 0u32);
 
-    use_future(move || async move {
-        loading.set(true);
-        let client = shared_client();
-        match client
-            .get_videos(FeedParams {
-                page: Some(1),
-                limit: Some(32),
-                sort: Some(sort_sig()),
-                tags: tags_sig(),
-                creator: creator_sig(),
-                ..Default::default()
-            })
-            .await
-        {
-            Ok(paged) => {
-                items.set(paged.items);
-                has_next.set(paged.pagination.has_next);
-                page.set(1);
-                err.set(None);
-            }
-            Err(e) => err.set(Some(e.to_string())),
+    // Seed from route when navigating via tag/creator links.
+    use_effect(move || {
+        let next =
+            BrowseFilterState::from_route(sort.as_deref(), tags.as_deref(), creator.as_deref());
+        let cur = filters.peek().clone();
+        if cur.tags != next.tags || cur.creator != next.creator || cur.sort != next.sort {
+            filters.set(next);
+            reload_tick.set(reload_tick() + 1);
         }
-        loading.set(false);
     });
 
-    let sorts = [
-        VideoSort::Newest,
-        VideoSort::MostViews,
-        VideoSort::TopRated,
-        VideoSort::MostLiked,
-    ];
+    use_effect(move || {
+        let _ = reload_tick();
+        let feed = filters.peek().to_feed(1);
+        spawn(async move {
+            loading.set(true);
+            let client = shared_client();
+            match client.get_videos(feed).await {
+                Ok(paged) => {
+                    total.set(paged.pagination.total);
+                    items.set(paged.items);
+                    has_next.set(paged.pagination.has_next);
+                    page.set(1);
+                    err.set(None);
+                }
+                Err(e) => err.set(Some(e.to_string())),
+            }
+            loading.set(false);
+        });
+    });
+
+    let f = filters();
+    let summary = {
+        let mut parts = Vec::new();
+        if !f.tags.trim().is_empty() {
+            parts.push(format!("tags: {}", f.tags.trim()));
+        }
+        if !f.stars.trim().is_empty() {
+            parts.push(format!("models: {}", f.stars.trim()));
+        }
+        if !f.creator.trim().is_empty() {
+            parts.push(format!("creator: {}", f.creator.trim()));
+        }
+        if parts.is_empty() {
+            "Explore the catalog".to_string()
+        } else {
+            parts.join(" · ")
+        }
+    };
 
     rsx! {
         div { class: "page-header",
             h1 { "Browse" }
-            p {
-                if let Some(t) = &tags { "Tag: {t}" }
-                else if let Some(c) = &creator { "Creator: {c}" }
-                else { "Explore the catalog" }
-            }
-        }
-        div { class: "tabs",
-            for s in sorts {
-                Link {
-                    to: crate::ui::nav::Route::Browse {
-                        sort: Some(s.as_api().to_string()),
-                        tags: tags.clone(),
-                        creator: creator.clone(),
-                    },
-                    class: if current_sort == s { "tab active" } else { "tab" },
-                    "{s.label()}"
+            p { "{summary}"
+                if total() > 0 {
+                    span { class: "muted", " · {total()} results" }
                 }
             }
         }
+
+        BrowseFilterPanel {
+            filters,
+            on_apply: move |_| {
+                reload_tick.set(reload_tick() + 1);
+            },
+        }
+
         if let Some(e) = err() {
             p { class: "error", "{e}" }
         }
@@ -96,29 +100,18 @@ pub fn Browse(sort: Option<String>, tags: Option<String>, creator: Option<String
                     class: "btn btn-primary",
                     onclick: move |_| {
                         let next = page() + 1;
-                        let tags = tags_sig();
-                        let creator = creator_sig();
-                        let sort = sort_sig();
+                        let feed = filters.peek().to_feed(next);
                         spawn(async move {
                             loading.set(true);
                             let client = shared_client();
-                            match client
-                                .get_videos(FeedParams {
-                                    page: Some(next),
-                                    limit: Some(32),
-                                    sort: Some(sort),
-                                    tags,
-                                    creator,
-                                    ..Default::default()
-                                })
-                                .await
-                            {
+                            match client.get_videos(feed).await {
                                 Ok(paged) => {
                                     let mut cur = items();
                                     cur.extend(paged.items);
                                     trim_front(&mut cur, MAX_BROWSE_ITEMS);
                                     items.set(cur);
                                     has_next.set(paged.pagination.has_next);
+                                    total.set(paged.pagination.total);
                                     page.set(next);
                                 }
                                 Err(e) => err.set(Some(e.to_string())),
