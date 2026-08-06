@@ -1,7 +1,7 @@
 name: Release
 
 # Builds Linux AppImage + Windows NSIS installer, then creates a GitHub Release
-# tagged from Cargo.toml's version (e.g. 2.1.0 → v2.1.0).
+# tagged from Cargo.toml's version (e.g. 2.1.1 → v2.1.1).
 #
 # Skips when that tag/release already exists so docs-only pushes to main are cheap.
 # Bump `[package].version` in Cargo.toml to cut a new release.
@@ -98,15 +98,24 @@ jobs:
             build-essential \
             pkg-config \
             libwebkit2gtk-4.1-dev \
+            libwebkit2gtk-4.1-0 \
             libgtk-3-dev \
             libayatana-appindicator3-dev \
             librsvg2-dev \
             patchelf \
             libxdo-dev \
             fuse \
-            wget
+            wget \
+            file \
+            python3
           # Package name varies across Ubuntu releases (t64 transition on 24.04).
           sudo apt-get install -y libfuse2t64 || sudo apt-get install -y libfuse2
+          # Confirm WebKit helpers exist for AppImage relocation.
+          test -x /usr/lib/x86_64-linux-gnu/webkit2gtk-4.1/WebKitNetworkProcess
+          # appimagetool for repacking the relocated AppDir
+          wget -q "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage" \
+            -O /usr/local/bin/appimagetool
+          chmod +x /usr/local/bin/appimagetool
 
       - uses: cargo-bins/cargo-binstall@main
 
@@ -121,12 +130,14 @@ jobs:
       - name: Bundle AppImage
         run: dx bundle --platform desktop --release --package-types appimage
 
-      - name: Wayland AppImage post-process
+      - name: Make AppImage portable (WebKit helpers + Wayland)
         run: |
-          chmod +x scripts/fix-appimage-wayland.sh
-          ./scripts/fix-appimage-wayland.sh || true
-          # Prefer the post-processed file if the script wrote a new one next to it.
-          ls -la target/dx/pmvheaven/bundle/linux/appimage/ || true
+          set -euo pipefail
+          chmod +x scripts/fix-appimage-wayland.sh scripts/relocate-webkit.py
+          SRC="$(find target/dx -type f -name '*.AppImage' | head -n1)"
+          test -n "$SRC"
+          ./scripts/fix-appimage-wayland.sh "$SRC"
+          ls -la target/dx/pmvheaven/bundle/linux/appimage/
 
       - name: Stage artifact
         id: stage
@@ -134,7 +145,11 @@ jobs:
           set -euo pipefail
           VERSION="${{ needs.version.outputs.version }}"
           mkdir -p dist
-          SRC="$(find target/dx -type f -name '*.AppImage' | head -n1)"
+          # Prefer the portable/repacked AppImage produced by the fix script.
+          SRC="$(find target/dx -type f -name '*-portable.AppImage' | head -n1 || true)"
+          if [[ -z "$SRC" ]]; then
+            SRC="$(find target/dx -type f -name '*.AppImage' | head -n1)"
+          fi
           if [[ -z "$SRC" ]]; then
             echo "No AppImage produced" >&2
             find target/dx -type f | head -100 >&2 || true
@@ -145,6 +160,20 @@ jobs:
           chmod +x "$DEST"
           echo "file=${DEST}" >> "$GITHUB_OUTPUT"
           ls -lh dist/
+          # Sanity: AppImage should contain WebKitNetworkProcess
+          TMP=$(mktemp -d)
+          cd "$TMP"
+          "$DEST" --appimage-extract >/dev/null
+          find squashfs-root -name WebKitNetworkProcess | tee helpers.txt
+          test -s helpers.txt
+          # Confirm libwebkit no longer references Ubuntu host path (or Arch path)
+          LIB=$(find squashfs-root -name 'libwebkit2gtk-4.1.so*' | head -n1)
+          if strings "$LIB" | grep -F '/usr/lib/x86_64-linux-gnu/webkit2gtk-4.1' | grep -v debug | grep -q .; then
+            echo "ERROR: libwebkit still contains Ubuntu helper path" >&2
+            strings "$LIB" | grep -F 'webkit2gtk-4.1' | head -20 >&2
+            exit 1
+          fi
+          strings "$LIB" | grep -F '/tmp/.pmvheaven-wk' | head -5
 
       - uses: actions/upload-artifact@v4
         with:

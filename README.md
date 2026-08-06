@@ -43,7 +43,7 @@ dx bundle --platform desktop --release
 
 On Linux this produces an AppImage under:
 
-`target/dx/pmvheaven/bundle/linux/appimage/pmvheaven_2.1.0_x86_64.AppImage`
+`target/dx/pmvheaven/bundle/linux/appimage/pmvheaven_2.1.1_x86_64.AppImage`
 
 Post-process for rolling-release Wayland hosts (strips bundled `libwayland*`, installs an AppRun wrapper):
 
@@ -57,7 +57,7 @@ No Node runtime is bundled. Windows builds use the same command on a Windows hos
 
 Pushes to `main` run [`.github/workflows/release.yml`](.github/workflows/release.yml):
 
-1. Read semver from `Cargo.toml` (`2.1.0` → tag `v2.1.0`)
+1. Read semver from `Cargo.toml` (`2.1.1` → tag `v2.1.1`)
 2. Skip if that GitHub Release already exists (bump the Cargo version to cut a new one)
 3. Build **Linux AppImage** + **Windows NSIS `.exe` installer**
 4. Publish a GitHub Release with both artifacts
@@ -76,6 +76,7 @@ After `dx bundle`, always run:
 ./scripts/fix-appimage-wayland.sh
 ```
 
+That script is **required** for GitHub/CI AppImages: it bundles WebKit helper processes and relocates hardcoded Ubuntu paths so the AppImage launches on Arch/CachyOS and other non-Debian hosts.
 | Mode | Command | Behavior |
 |------|---------|----------|
 | `wayland` (default) | `PMV_GFX=wayland ./…AppImage` | System Wayland preload, DMABUF **on**, host GST plugins |

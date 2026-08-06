@@ -1,25 +1,22 @@
 #!/usr/bin/env bash
-# Post-process a Dioxus AppImage for rolling-release Wayland hosts.
+# Post-process a Dioxus AppImage for portable Linux hosts.
 #
-# 1. Strips bundled libwayland*.so* so the dynamic linker uses the system ones
-# 2. Replaces the AppRun symlink with a thin wrapper that preloads system
-#    libwayland-client (belt-and-suspenders with the in-binary PMV_GFX logic)
-# 3. Repacks with appimagetool when available
+# 1. Bundles WebKitGTK helper processes (Network/Web/GPU) into the AppDir
+# 2. Byte-patches libwebkit2gtk hardcoded helper paths → /tmp/.pmvheaven-wk
+# 3. Strips bundled libwayland* so rolling compositors use the system ABI
+# 4. Installs an AppRun that symlinks helpers, preloads Wayland, prefers host GST
+# 5. Repacks with appimagetool when available
 #
 # Usage:
 #   ./scripts/fix-appimage-wayland.sh [path/to/pmvheaven_*.AppImage]
-#
-# Compare graphics modes after fix:
-#   PMV_GFX=wayland   ./pmvheaven_….AppImage   # default, GPU/DMABUF on
-#   PMV_GFX=dmabuf-off ./pmvheaven_….AppImage
-#   PMV_GFX=soft      ./pmvheaven_….AppImage
-#   PMV_GFX=stock     ./pmvheaven_….AppImage   # no fixes
 
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DEFAULT_APPIMAGE="$(ls -1 "$ROOT"/target/dx/pmvheaven/bundle/linux/appimage/pmvheaven_*.AppImage 2>/dev/null | sort | tail -1 || true)"
 APPIMAGE="${1:-$DEFAULT_APPIMAGE}"
+WK_LINK="/tmp/.pmvheaven-wk"
+RELOCATE="$ROOT/scripts/relocate-webkit.py"
 
 if [[ -z "$APPIMAGE" || ! -f "$APPIMAGE" ]]; then
   echo "AppImage not found. Build first:"
@@ -42,15 +39,60 @@ if [[ ! -x "$APPDIR/usr/bin/$BIN_NAME" ]]; then
   BIN_NAME="$(basename "$(find "$APPDIR/usr/bin" -type f -executable | head -1)")"
 fi
 
-echo "==> Removing bundled Wayland client libs (force system ABI)"
-REMOVED=0
-for f in "$APPDIR"/usr/lib/libwayland-*.so*; do
-  if [[ -e "$f" ]]; then
-    echo "    rm $(basename "$f")"
-    rm -f "$f"
-    REMOVED=$((REMOVED + 1))
+echo "==> Bundling WebKitGTK helper processes"
+WK_SRC=""
+for d in \
+  /usr/lib/x86_64-linux-gnu/webkit2gtk-4.1 \
+  /usr/lib/aarch64-linux-gnu/webkit2gtk-4.1 \
+  /usr/lib64/webkit2gtk-4.1 \
+  /usr/lib/webkit2gtk-4.1
+do
+  if [[ -x "$d/WebKitNetworkProcess" ]]; then
+    WK_SRC="$d"
+    break
   fi
 done
+
+if [[ -z "$WK_SRC" ]]; then
+  echo "ERROR: WebKitNetworkProcess not found on build host." >&2
+  echo "Install webkit2gtk-4.1 (Arch) or libwebkit2gtk-4.1-0 (Debian/Ubuntu)." >&2
+  exit 1
+fi
+
+# Keep Ubuntu-style layout inside the AppDir (matches CI-built lib paths).
+WK_DST="$APPDIR/usr/lib/x86_64-linux-gnu/webkit2gtk-4.1"
+# On aarch64 hosts, still use a stable relative layout under usr/lib.
+if [[ "$(uname -m)" == "aarch64" ]]; then
+  WK_DST="$APPDIR/usr/lib/aarch64-linux-gnu/webkit2gtk-4.1"
+fi
+mkdir -p "$(dirname "$WK_DST")"
+rm -rf "$WK_DST"
+cp -a "$WK_SRC" "$WK_DST"
+echo "    copied $WK_SRC → ${WK_DST#"$APPDIR"/}"
+
+# Helpers must resolve bundled libs next to them / in usr/lib.
+if command -v patchelf >/dev/null 2>&1; then
+  for helper in WebKitNetworkProcess WebKitWebProcess WebKitGPUProcess jsc MiniBrowser; do
+    f="$WK_DST/$helper"
+    [[ -f "$f" && -x "$f" ]] || continue
+    # $ORIGIN = webkit2gtk-4.1 dir; ../ = multiarch libdir; ../../ = usr/lib
+    patchelf --set-rpath '$ORIGIN:$ORIGIN/..:$ORIGIN/../..' "$f" || true
+  done
+  echo "    patchelf rpath set on WebKit helpers"
+else
+  echo "    WARNING: patchelf not found — helpers may fail to load bundled libs"
+fi
+
+echo "==> Relocating hardcoded WebKit paths → $WK_LINK"
+python3 "$RELOCATE" "$APPDIR" --link-path "$WK_LINK"
+
+echo "==> Removing bundled Wayland client libs (force system ABI)"
+REMOVED=0
+while IFS= read -r -d '' f; do
+  echo "    rm ${f#"$APPDIR"/}"
+  rm -f "$f"
+  REMOVED=$((REMOVED + 1))
+done < <(find "$APPDIR/usr/lib" -maxdepth 3 -name 'libwayland-*.so*' -print0 2>/dev/null || true)
 echo "    removed $REMOVED library files"
 
 echo "==> Installing AppRun wrapper"
@@ -61,6 +103,36 @@ set -euo pipefail
 HERE="\$(dirname "\$(readlink -f "\$0")")"
 export PATH="\$HERE/usr/bin:\${PATH:-}"
 export LD_LIBRARY_PATH="\$HERE/usr/lib:\${LD_LIBRARY_PATH:-}"
+# Multiarch lib dirs used by Ubuntu CI bundles.
+for libdir in \\
+  "\$HERE/usr/lib/x86_64-linux-gnu" \\
+  "\$HERE/usr/lib/aarch64-linux-gnu" \\
+  "\$HERE/usr/lib64"; do
+  if [[ -d "\$libdir" ]]; then
+    export LD_LIBRARY_PATH="\$libdir:\${LD_LIBRARY_PATH}"
+  fi
+done
+
+# WebKitGTK looks for helpers at a compile-time absolute path. We patch the
+# bundled libwebkit to use this /tmp symlink, then point it into the AppDir.
+WK_LINK="$WK_LINK"
+WK_TARGET=""
+for d in \\
+  "\$HERE/usr/lib/x86_64-linux-gnu/webkit2gtk-4.1" \\
+  "\$HERE/usr/lib/aarch64-linux-gnu/webkit2gtk-4.1" \\
+  "\$HERE/usr/lib64/webkit2gtk-4.1" \\
+  "\$HERE/usr/lib/webkit2gtk-4.1"; do
+  if [[ -x "\$d/WebKitNetworkProcess" ]]; then
+    WK_TARGET="\$d"
+    break
+  fi
+done
+if [[ -z "\$WK_TARGET" ]]; then
+  echo "pmvheaven: WebKitNetworkProcess missing from AppImage" >&2
+  exit 1
+fi
+ln -sfn "\$WK_TARGET" "\$WK_LINK"
+export WEBKIT_INJECTED_BUNDLE_PATH="\$WK_TARGET/injected-bundle"
 
 # Prefer host Wayland client over anything still resolved from the AppDir.
 if [[ -z "\${LD_PRELOAD:-}" ]]; then
@@ -92,7 +164,6 @@ done
 # Default graphics mode: system Wayland + keep DMABUF (best video FPS).
 export PMV_GFX="\${PMV_GFX:-wayland}"
 export PMV_WAYLAND_PRELOADED="\${PMV_WAYLAND_PRELOADED:-1}"
-# Keep GPU compositing on unless the user overrode PMV_GFX.
 if [[ "\${PMV_GFX}" == "wayland" ]]; then
   unset WEBKIT_DISABLE_DMABUF_RENDERER || true
   unset WEBKIT_DISABLE_COMPOSITING_MODE || true
@@ -106,8 +177,13 @@ EOF
 chmod +x "$APPDIR/AppRun"
 
 OUT_DIR="$(dirname "$APPIMAGE")"
-OUT_NAME="$(basename "$APPIMAGE" .AppImage)-wayland.AppImage"
-OUT_PATH="$OUT_DIR/$OUT_NAME"
+# Overwrite the release-style name when given; otherwise write -portable alongside.
+BASE="$(basename "$APPIMAGE" .AppImage)"
+if [[ "$BASE" == PMVHeaven-* ]]; then
+  OUT_PATH="$OUT_DIR/${BASE}.AppImage"
+else
+  OUT_PATH="$OUT_DIR/${BASE}-portable.AppImage"
+fi
 
 if command -v appimagetool >/dev/null 2>&1; then
   echo "==> Repacking with appimagetool → $OUT_PATH"
@@ -120,20 +196,11 @@ elif command -v appimagetool.AppImage >/dev/null 2>&1; then
   chmod +x "$OUT_PATH"
   echo "Done: $OUT_PATH"
 else
-  # Fallback: leave an extract dir next to the AppImage for manual run / later pack.
-  FALLBACK="$OUT_DIR/$(basename "$APPIMAGE" .AppImage)-wayland.AppDir"
+  FALLBACK="$OUT_DIR/${BASE}-portable.AppDir"
   rm -rf "$FALLBACK"
   cp -a "$APPDIR" "$FALLBACK"
   echo "appimagetool not found — wrote extract dir instead:"
   echo "  $FALLBACK"
-  echo "Run with:"
-  echo "  $FALLBACK/AppRun"
-  echo "Or install appimagetool and re-run this script to produce a single .AppImage."
+  echo "Run with: $FALLBACK/AppRun"
+  exit 1
 fi
-
-echo
-echo "A/B performance modes:"
-echo "  PMV_GFX=wayland   $OUT_PATH   # default — preload + DMABUF on"
-echo "  PMV_GFX=dmabuf-off $OUT_PATH"
-echo "  PMV_GFX=soft      $OUT_PATH"
-echo "  PMV_GFX=stock     $OUT_PATH   # no fixes"
