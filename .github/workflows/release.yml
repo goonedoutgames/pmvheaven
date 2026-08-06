@@ -155,19 +155,20 @@ jobs:
             find target/dx -type f | head -100 >&2 || true
             exit 1
           fi
-          DEST="dist/PMVHeaven-${VERSION}-x86_64.AppImage"
+          DEST="$(pwd)/dist/PMVHeaven-${VERSION}-x86_64.AppImage"
           cp "$SRC" "$DEST"
           chmod +x "$DEST"
           echo "file=${DEST}" >> "$GITHUB_OUTPUT"
-          ls -lh dist/
+          ls -lh "$(dirname "$DEST")"
           # Sanity: AppImage should contain WebKitNetworkProcess
           TMP=$(mktemp -d)
           cd "$TMP"
           "$DEST" --appimage-extract >/dev/null
           find squashfs-root -name WebKitNetworkProcess | tee helpers.txt
           test -s helpers.txt
-          # Confirm libwebkit no longer references Ubuntu host path (or Arch path)
+          # Confirm libwebkit no longer references Ubuntu host path
           LIB=$(find squashfs-root -name 'libwebkit2gtk-4.1.so*' | head -n1)
+          test -n "$LIB"
           if strings "$LIB" | grep -F '/usr/lib/x86_64-linux-gnu/webkit2gtk-4.1' | grep -v debug | grep -q .; then
             echo "ERROR: libwebkit still contains Ubuntu helper path" >&2
             strings "$LIB" | grep -F 'webkit2gtk-4.1' | head -20 >&2
