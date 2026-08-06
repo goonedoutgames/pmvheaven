@@ -109,19 +109,33 @@ fi
 GST_DST_PARENT="$(dirname "$WK_DST")"  # e.g. .../usr/lib/x86_64-linux-gnu
 GST_DST="$GST_DST_PARENT/gstreamer-1.0"
 mkdir -p "$GST_DST"
-# Copy plugins; skip cache files that are machine-specific
-rsync -a --delete \
-  --exclude='*.pyc' \
-  --exclude='__pycache__' \
-  --exclude='*.debug' \
-  "$GST_SRC/" "$GST_DST/" 2>/dev/null \
-  || cp -a "$GST_SRC"/. "$GST_DST"/
+# Prefer cp (always available). Avoid rsync --delete wiping a partial copy on error.
+cp -a "$GST_SRC"/. "$GST_DST"/
 PLUGIN_COUNT="$(find "$GST_DST" -maxdepth 1 -name 'libgst*.so' | wc -l)"
 echo "    copied $PLUGIN_COUNT plugins from $GST_SRC → ${GST_DST#"$APPDIR"/}"
 if [[ "$PLUGIN_COUNT" -lt 10 ]]; then
   echo "ERROR: too few GStreamer plugins copied ($PLUGIN_COUNT)" >&2
   exit 1
 fi
+for need in libgstplayback.so libgstautodetect.so; do
+  if [[ ! -f "$GST_DST/$need" ]]; then
+    echo "ERROR: required plugin missing after copy: $need" >&2
+    ls -la "$GST_DST" | head -40 >&2 || true
+    exit 1
+  fi
+done
+# Drop empty/partial leftover plugin dirs that confuse loaders & CI checks.
+for leftover in \
+  "$APPDIR/usr/lib/gstreamer-1.0" \
+  "$APPDIR/usr/lib64/gstreamer-1.0"
+do
+  if [[ -d "$leftover" && "$leftover" != "$GST_DST" ]]; then
+    if [[ ! -f "$leftover/libgstplayback.so" ]]; then
+      echo "    removing leftover plugin dir ${leftover#"$APPDIR"/}"
+      rm -rf "$leftover"
+    fi
+  fi
+done
 # gst-plugin-scanner lives next to plugins on some distros / in libexec on others
 for scanner in \
   "$GST_SRC/gst-plugin-scanner" \
@@ -210,17 +224,27 @@ fi
 # Use ONLY AppImage GStreamer plugins — same ABI as bundled libgstreamer.
 # Mixing host plugins (newer Arch) with Ubuntu libs → undefined symbol freezes.
 GST_PLUGINS=""
-for d in \\
-  "\$HERE/usr/lib/x86_64-linux-gnu/gstreamer-1.0" \\
-  "\$HERE/usr/lib/aarch64-linux-gnu/gstreamer-1.0" \\
-  "\$HERE/usr/lib64/gstreamer-1.0" \\
-  "\$HERE/usr/lib/gstreamer-1.0"; do
-  if [[ -d "\$d" ]]; then
-    GST_PLUGINS="\$d"
-    break
-  fi
-done
+PLAYBACK=""
+while IFS= read -r -d '' f; do
+  PLAYBACK="\$f"
+  break
+done < <(find "\$HERE/usr/lib" -type f -name 'libgstplayback.so' -print0 2>/dev/null || true)
+if [[ -n "\$PLAYBACK" ]]; then
+  GST_PLUGINS="\$(dirname "\$PLAYBACK")"
+fi
 if [[ -z "\$GST_PLUGINS" ]]; then
+  for d in \\
+    "\$HERE/usr/lib/x86_64-linux-gnu/gstreamer-1.0" \\
+    "\$HERE/usr/lib/aarch64-linux-gnu/gstreamer-1.0" \\
+    "\$HERE/usr/lib64/gstreamer-1.0" \\
+    "\$HERE/usr/lib/gstreamer-1.0"; do
+    if [[ -d "\$d" ]]; then
+      GST_PLUGINS="\$d"
+      break
+    fi
+  done
+fi
+if [[ -z "\$GST_PLUGINS" || ! -f "\$GST_PLUGINS/libgstplayback.so" ]]; then
   echo "pmvheaven: gstreamer-1.0 plugins missing from AppImage" >&2
   exit 1
 fi

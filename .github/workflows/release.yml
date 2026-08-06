@@ -175,12 +175,23 @@ jobs:
           "$DEST" --appimage-extract >/dev/null
           find squashfs-root -name WebKitNetworkProcess | tee helpers.txt
           test -s helpers.txt
-          # Confirm bundled GStreamer plugins (autoaudiosink needs playback + autodetect)
-          GST=$(find squashfs-root -type d -name 'gstreamer-1.0' | head -n1)
-          test -n "$GST"
-          test -f "$GST/libgstplayback.so"
-          test -f "$GST/libgstautodetect.so"
-          echo "GStreamer plugins: $(find "$GST" -maxdepth 1 -name 'libgst*.so' | wc -l)"
+          # Confirm bundled GStreamer plugins (autoaudiosink needs playback + autodetect).
+          # Prefer the dir that actually contains plugins — linuxdeploy may leave an
+          # empty usr/lib/gstreamer-1.0 that find would otherwise hit first.
+          PLAYBACK=$(find squashfs-root -type f -name 'libgstplayback.so' | head -n1 || true)
+          if [[ -z "$PLAYBACK" ]]; then
+            echo "ERROR: libgstplayback.so missing from AppImage (GST plugins not bundled)" >&2
+            find squashfs-root -type d -name 'gstreamer-1.0' -print >&2 || true
+            find squashfs-root -path '*gstreamer*' | head -40 >&2 || true
+            exit 1
+          fi
+          GST="$(dirname "$PLAYBACK")"
+          if [[ ! -f "$GST/libgstautodetect.so" ]]; then
+            echo "ERROR: libgstautodetect.so missing next to playback in $GST" >&2
+            ls -la "$GST" | head -40 >&2 || true
+            exit 1
+          fi
+          echo "GStreamer plugins in ${GST#squashfs-root/}: $(find "$GST" -maxdepth 1 -name 'libgst*.so' | wc -l)"
           # Confirm libwebkit no longer references Ubuntu host path
           LIB=$(find squashfs-root -name 'libwebkit2gtk-4.1.so*' | head -n1)
           test -n "$LIB"
@@ -189,8 +200,10 @@ jobs:
             strings "$LIB" | grep -F 'webkit2gtk-4.1' | head -20 >&2
             exit 1
           fi
-          strings "$LIB" | grep -F '/tmp/.pmvheaven-wk' | head -5
-
+          if ! strings "$LIB" | grep -F '/tmp/.pmvheaven-wk' | head -5; then
+            echo "ERROR: libwebkit missing relocated /tmp/.pmvheaven-wk path" >&2
+            exit 1
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: linux-appimage
