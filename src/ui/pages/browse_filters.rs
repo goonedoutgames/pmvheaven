@@ -13,6 +13,8 @@ pub struct BrowseFilterState {
     pub stars: String,
     pub music: String,
     pub creator: String,
+    /// Uploader username or id (profile filter — distinct from content creator).
+    pub uploader: String,
     pub tag_mode_and: bool,
     pub expand_tags: bool,
     /// Preset: "", "today", "7days", "30days", "365days"
@@ -49,6 +51,7 @@ impl Default for BrowseFilterState {
             stars: String::new(),
             music: String::new(),
             creator: String::new(),
+            uploader: String::new(),
             tag_mode_and: false,
             expand_tags: false,
             uploaded: String::new(),
@@ -75,7 +78,14 @@ impl Default for BrowseFilterState {
 }
 
 impl BrowseFilterState {
-    pub fn from_route(sort: Option<&str>, tags: Option<&str>, creator: Option<&str>) -> Self {
+    pub fn from_route(
+        sort: Option<&str>,
+        tags: Option<&str>,
+        creator: Option<&str>,
+        uploader: Option<&str>,
+        stars: Option<&str>,
+        music: Option<&str>,
+    ) -> Self {
         let mut s = Self::default();
         if let Some(sort) = sort {
             s.sort = VideoSort::from_api(sort);
@@ -85,6 +95,15 @@ impl BrowseFilterState {
         }
         if let Some(c) = creator {
             s.creator = c.to_string();
+        }
+        if let Some(u) = uploader {
+            s.uploader = u.to_string();
+        }
+        if let Some(st) = stars {
+            s.stars = st.to_string();
+        }
+        if let Some(m) = music {
+            s.music = m.to_string();
         }
         s
     }
@@ -121,14 +140,29 @@ impl BrowseFilterState {
         }
         let music = self.music.trim();
         if !music.is_empty() {
-            // Site uses musicArtist / musicTags; send both for coverage.
-            p.music_artist = Some(music.to_string());
-            p.music_tags = Some(music.to_string());
+            // Prefer artist query; sending the same string as musicTags often zeros results.
+            if music.contains(" - ") {
+                let mut parts = music.splitn(2, " - ");
+                let artist = parts.next().unwrap_or("").trim();
+                let song = parts.next().unwrap_or("").trim();
+                if !artist.is_empty() {
+                    p.music_artist = Some(artist.to_string());
+                }
+                if !song.is_empty() {
+                    p.music_song = Some(song.to_string());
+                }
+            } else {
+                p.music_artist = Some(music.to_string());
+            }
         }
         let creator = self.creator.trim();
         if !creator.is_empty() {
-            p.creators = Some(creator.to_string());
+            // Site search page uses `creator` (content creator), not uploader.
             p.creator = Some(creator.to_string());
+        }
+        let uploader = self.uploader.trim();
+        if !uploader.is_empty() {
+            p.uploader = Some(uploader.to_string());
         }
 
         if let Some(from) = upload_from_preset(&self.uploaded) {
@@ -207,6 +241,9 @@ impl BrowseFilterState {
             n += 1;
         }
         if !self.creator.trim().is_empty() {
+            n += 1;
+        }
+        if !self.uploader.trim().is_empty() {
             n += 1;
         }
         if !self.uploaded.is_empty() {
@@ -449,7 +486,7 @@ pub fn BrowseFilterPanel(
                             span { "Music" }
                             input {
                                 r#type: "text",
-                                placeholder: "Search artist or song…",
+                                placeholder: "Artist, or Artist - Song…",
                                 value: "{f.music}",
                                 oninput: move |e| filters.with_mut(|s| s.music = e.value()),
                             }
@@ -458,9 +495,18 @@ pub fn BrowseFilterPanel(
                             span { "Creator" }
                             input {
                                 r#type: "text",
-                                placeholder: "Search creator…",
+                                placeholder: "Content creator name…",
                                 value: "{f.creator}",
                                 oninput: move |e| filters.with_mut(|s| s.creator = e.value()),
+                            }
+                        }
+                        label { class: "filters-field",
+                            span { "Uploader" }
+                            input {
+                                r#type: "text",
+                                placeholder: "Profile / uploader username…",
+                                value: "{f.uploader}",
+                                oninput: move |e| filters.with_mut(|s| s.uploader = e.value()),
                             }
                         }
                     }

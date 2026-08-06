@@ -77,9 +77,29 @@ if [[ -z "\${LD_PRELOAD:-}" ]]; then
   done
 fi
 
+# Prefer host GStreamer plugins (VAAPI / NVDEC) over the AppImage's partial set.
+for gst in \\
+  /usr/lib/gstreamer-1.0 \\
+  /usr/lib64/gstreamer-1.0 \\
+  /usr/lib/x86_64-linux-gnu/gstreamer-1.0; do
+  if [[ -d "\$gst" ]]; then
+    export GST_PLUGIN_SYSTEM_PATH_1_0="\$gst\${GST_PLUGIN_SYSTEM_PATH_1_0:+:\$GST_PLUGIN_SYSTEM_PATH_1_0}"
+    export GST_PLUGIN_PATH="\$gst\${GST_PLUGIN_PATH:+:\$GST_PLUGIN_PATH}"
+    break
+  fi
+done
+
 # Default graphics mode: system Wayland + keep DMABUF (best video FPS).
 export PMV_GFX="\${PMV_GFX:-wayland}"
 export PMV_WAYLAND_PRELOADED="\${PMV_WAYLAND_PRELOADED:-1}"
+# Keep GPU compositing on unless the user overrode PMV_GFX.
+if [[ "\${PMV_GFX}" == "wayland" ]]; then
+  unset WEBKIT_DISABLE_DMABUF_RENDERER || true
+  unset WEBKIT_DISABLE_COMPOSITING_MODE || true
+  export GDK_GL="\${GDK_GL:-gles}"
+  export GST_GL_PLATFORM="\${GST_GL_PLATFORM:-egl}"
+  export GST_GL_API="\${GST_GL_API:-gles2}"
+fi
 
 exec "\$HERE/usr/bin/$BIN_NAME" "\$@"
 EOF

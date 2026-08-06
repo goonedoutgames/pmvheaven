@@ -1,3 +1,4 @@
+use crate::app::save_hover_previews;
 use crate::models::AccountUser;
 use crate::paths;
 use crate::services::pmv::shared_client;
@@ -12,6 +13,7 @@ use std::collections::HashMap;
 pub fn Settings() -> Element {
     let mut user = use_context::<Signal<Option<AccountUser>>>();
     let watched_map = use_context::<Signal<HashMap<String, f64>>>();
+    let mut hover_previews = use_context::<Signal<bool>>();
     let count = history_count();
     let last = last_sync();
     let mut msg = use_signal(|| None::<String>);
@@ -43,6 +45,24 @@ pub fn Settings() -> Element {
             } else {
                 p { class: "muted", "Not signed in." }
                 Link { to: Route::Login {}, class: "btn btn-primary", "Sign in" }
+            }
+        }
+        section { class: "section",
+            h2 { "Playback" }
+            label { class: "filters-check",
+                input {
+                    r#type: "checkbox",
+                    checked: hover_previews(),
+                    onchange: move |_| {
+                        let next = !hover_previews();
+                        hover_previews.set(next);
+                        save_hover_previews(next);
+                    },
+                }
+                "Hover video previews on cards"
+            }
+            p { class: "muted", style: "margin-top:0.5rem;",
+                "Off by default — previews use extra decode work and can hitch while something is playing."
             }
         }
         section { class: "section",

@@ -333,6 +333,8 @@ impl PmvClient {
     }
 
     pub async fn search(&self, q: &str, page: u32, limit: u32) -> Result<Paged<VideoSummary>> {
+        // Site text search is `/api/videos/search?q=` (public).
+        // `/api/search` is a separate API-key endpoint and is not what the website uses.
         let owned = [
             ("q".to_string(), q.to_string()),
             ("page".to_string(), page.to_string()),
@@ -340,24 +342,12 @@ impl PmvClient {
         ];
         let mut req = self
             .http
-            .get(format!("{BASE}/search"))
-            .headers(self.headers(true, false));
+            .get(format!("{BASE}/videos/search"))
+            .headers(self.headers(is_connected(), false));
         for (k, v) in &owned {
             req = req.query(&[(k.as_str(), v.as_str())]);
         }
-        let mut res = req.send().await?;
-        if res.status() == 401 || res.status() == 403 {
-            if try_reauth(self).await {
-                let mut req = self
-                    .http
-                    .get(format!("{BASE}/search"))
-                    .headers(self.headers(true, false));
-                for (k, v) in &owned {
-                    req = req.query(&[(k.as_str(), v.as_str())]);
-                }
-                res = req.send().await?;
-            }
-        }
+        let res = req.send().await?;
         let status = res.status().as_u16();
         if !res.status().is_success() {
             return Err(PmvError::Status(status, format!("search failed ({status})")));

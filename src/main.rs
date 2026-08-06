@@ -54,8 +54,13 @@ fn main() {
         .with_custom_head(
             r#"<meta name="color-scheme" content="dark">
                     <style>
-                      html, body { background: #0c0e12; }
-                      video { transform: translateZ(0); }
+                      html, body { background: #0a0a0c; }
+                      /* Keep media on the GPU compositor thread. */
+                      video, .player-video {
+                        transform: translate3d(0,0,0);
+                        -webkit-transform: translate3d(0,0,0);
+                        backface-visibility: hidden;
+                      }
                     </style>"#
             .into(),
         );

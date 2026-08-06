@@ -5,7 +5,9 @@ Ad-free desktop client for [PMVHaven](https://pmvhaven.com), rewritten in **Rust
 ## Features
 
 - **Browse & discover** — site-parity filters (sort, tags, models, music, creator, duration/rating/views, content chips), trending home, infinite scroll
-- **Search** — authenticated search with tag fallback when signed out
+- **Search** — title/text search via PMVHaven `/api/videos/search` (works signed out)
+- **Uploader profiles** — click a username to browse that uploader’s videos (`uploader=` filter)
+- **Diegetic discovery** — tags, models, creators, and music chips on the watch page jump into browse filters
 - **Playback** — HTML5 video in the system WebView, HLS via vendored `hls.js`, Rust localhost media proxy (SSRF-guarded)
 - **Permanent watch history** — SQLite archive; pull from PMVHaven session + push local watches back via `/users/watch-progress`
 - **Play queue** — add / play next / reorder / clear; persisted to `queue.json`
@@ -66,16 +68,22 @@ On launch the app checks `goonedoutgames/pmvheaven` for a newer release and offe
 
 ### Linux graphics A/B (`PMV_GFX`)
 
-On Wayland + AppImage (or any Linux build), the app defaults to **system `libwayland-client` preload** and leaves WebKit’s DMA-BUF renderer on — usually the best video FPS.
+On Wayland + AppImage (or any Linux build), the app defaults to **system `libwayland-client` preload**, **host GStreamer plugins** (VAAPI/NVDEC when installed), and leaves WebKit’s DMA-BUF renderer on — usually the best video FPS.
+
+After `dx bundle`, always run:
+
+```bash
+./scripts/fix-appimage-wayland.sh
+```
 
 | Mode | Command | Behavior |
 |------|---------|----------|
-| `wayland` (default) | `PMV_GFX=wayland ./…AppImage` | System Wayland preload, DMABUF **on** |
+| `wayland` (default) | `PMV_GFX=wayland ./…AppImage` | System Wayland preload, DMABUF **on**, host GST plugins |
 | `dmabuf-off` | `PMV_GFX=dmabuf-off ./…AppImage` | Preload + `WEBKIT_DISABLE_DMABUF_RENDERER=1` |
 | `soft` | `PMV_GFX=soft ./…AppImage` | Preload + DMABUF + compositing off (slowest) |
 | `stock` | `PMV_GFX=stock ./…AppImage` | No fixes (baseline / protocol-error repro) |
 
-Startup prints which mode is active on stderr. Compare fullscreen playback FPS between `wayland` and `dmabuf-off` on your machine.
+Startup prints which mode is active on stderr. Install `gstreamer-vaapi` / `gst-plugin-va` (or NVIDIA GST plugins) on the host for hardware decode.
 
 ## Data
 

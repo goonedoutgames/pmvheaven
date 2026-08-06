@@ -9,9 +9,23 @@ use dioxus::prelude::*;
 const MAX_BROWSE_ITEMS: usize = 96;
 
 #[component]
-pub fn Browse(sort: Option<String>, tags: Option<String>, creator: Option<String>) -> Element {
+pub fn Browse(
+    sort: Option<String>,
+    tags: Option<String>,
+    creator: Option<String>,
+    uploader: Option<String>,
+    stars: Option<String>,
+    music: Option<String>,
+) -> Element {
     let mut filters = use_signal(|| {
-        BrowseFilterState::from_route(sort.as_deref(), tags.as_deref(), creator.as_deref())
+        BrowseFilterState::from_route(
+            sort.as_deref(),
+            tags.as_deref(),
+            creator.as_deref(),
+            uploader.as_deref(),
+            stars.as_deref(),
+            music.as_deref(),
+        )
     });
     let mut items = use_signal(|| Vec::<VideoSummary>::new());
     let mut page = use_signal(|| 1u32);
@@ -21,12 +35,24 @@ pub fn Browse(sort: Option<String>, tags: Option<String>, creator: Option<String
     let mut err = use_signal(|| None::<String>);
     let mut reload_tick = use_signal(|| 0u32);
 
-    // Seed from route when navigating via tag/creator links.
+    // Seed from route when navigating via tag / uploader / model / music links.
     use_effect(move || {
-        let next =
-            BrowseFilterState::from_route(sort.as_deref(), tags.as_deref(), creator.as_deref());
+        let next = BrowseFilterState::from_route(
+            sort.as_deref(),
+            tags.as_deref(),
+            creator.as_deref(),
+            uploader.as_deref(),
+            stars.as_deref(),
+            music.as_deref(),
+        );
         let cur = filters.peek().clone();
-        if cur.tags != next.tags || cur.creator != next.creator || cur.sort != next.sort {
+        let changed = cur.tags != next.tags
+            || cur.creator != next.creator
+            || cur.uploader != next.uploader
+            || cur.stars != next.stars
+            || cur.music != next.music
+            || cur.sort != next.sort;
+        if changed {
             filters.set(next);
             reload_tick.set(reload_tick() + 1);
         }
@@ -55,11 +81,17 @@ pub fn Browse(sort: Option<String>, tags: Option<String>, creator: Option<String
     let f = filters();
     let summary = {
         let mut parts = Vec::new();
+        if !f.uploader.trim().is_empty() {
+            parts.push(format!("uploader: {}", f.uploader.trim()));
+        }
         if !f.tags.trim().is_empty() {
             parts.push(format!("tags: {}", f.tags.trim()));
         }
         if !f.stars.trim().is_empty() {
             parts.push(format!("models: {}", f.stars.trim()));
+        }
+        if !f.music.trim().is_empty() {
+            parts.push(format!("music: {}", f.music.trim()));
         }
         if !f.creator.trim().is_empty() {
             parts.push(format!("creator: {}", f.creator.trim()));
@@ -104,17 +136,13 @@ pub fn Browse(sort: Option<String>, tags: Option<String>, creator: Option<String
                         spawn(async move {
                             loading.set(true);
                             let client = shared_client();
-                            match client.get_videos(feed).await {
-                                Ok(paged) => {
-                                    let mut cur = items();
-                                    cur.extend(paged.items);
-                                    trim_front(&mut cur, MAX_BROWSE_ITEMS);
-                                    items.set(cur);
-                                    has_next.set(paged.pagination.has_next);
-                                    total.set(paged.pagination.total);
-                                    page.set(next);
-                                }
-                                Err(e) => err.set(Some(e.to_string())),
+                            if let Ok(paged) = client.get_videos(feed).await {
+                                items.with_mut(|v| {
+                                    v.extend(paged.items);
+                                    trim_front(v, MAX_BROWSE_ITEMS);
+                                });
+                                has_next.set(paged.pagination.has_next);
+                                page.set(next);
                             }
                             loading.set(false);
                         });

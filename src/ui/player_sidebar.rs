@@ -25,6 +25,7 @@ pub fn PlayerSidebar() -> Element {
     let mut queue_open = use_context::<Signal<bool>>();
     let mut watched_map = use_context::<Signal<HashMap<String, f64>>>();
     let player_fs = use_context::<Signal<bool>>();
+    let player_rail_w = use_context::<Signal<Option<u32>>>();
     let navigator = use_navigator();
 
     let queue_items = use_memo(move || {
@@ -62,6 +63,7 @@ pub fn PlayerSidebar() -> Element {
                             start_at,
                             queue_tick,
                             player_fs,
+                            player_rail_w,
                             &mut watched_map,
                         )
                         .await;
@@ -135,6 +137,15 @@ pub fn PlayerSidebar() -> Element {
                     if (e.key === 'Escape' && window.__pmvFs) send('toggle-fs');
                   }};
                   window.addEventListener('keydown', window.__pmvFsEsc);
+                }}
+
+                // Double-click video to toggle our in-app fullscreen.
+                if (!el.dataset.dblFs) {{
+                  el.dataset.dblFs = '1';
+                  el.addEventListener('dblclick', (e) => {{
+                    e.preventDefault();
+                    send('toggle-fs');
+                  }});
                 }}
 
                 const resume = {resume};
@@ -214,6 +225,18 @@ pub fn PlayerSidebar() -> Element {
 
     rsx! {
         aside { class: if fs { "player-sidebar fullscreen" } else { "player-sidebar" },
+            if !fs {
+                div {
+                    class: "player-rail-resize",
+                    title: "Drag to resize player",
+                    onpointerdown: move |evt| {
+                        evt.prevent_default();
+                        spawn(async move {
+                            let _ = document::eval(RAIL_RESIZE_JS).await;
+                        });
+                    },
+                }
+            }
             if let Some(playable) = now_playing() {
                 {
                     let id = playable.summary.id.clone();
@@ -242,17 +265,29 @@ pub fn PlayerSidebar() -> Element {
                                     preload: "auto",
                                 }
                             }
-                            button {
-                                class: "player-fs-btn",
-                                title: if fs { "Exit fullscreen (Esc)" } else { "Fullscreen" },
-                                onclick: move |_| {
-                                    set_fullscreen_mode(!player_fs(), player_fs);
-                                },
-                                if fs { "⤡" } else { "⤢" }
+                            if !fs {
+                                button {
+                                    class: "player-fs-btn",
+                                    title: "Fullscreen (double-click video)",
+                                    onclick: move |_| {
+                                        set_fullscreen_mode(!player_fs(), player_fs);
+                                    },
+                                    "⤢"
+                                }
                             }
                         }
-                        div { class: if fs { "player-meta is-hidden" } else { "player-meta" },
-                            div { class: "player-title", title: "{title}", "{title}" }
+                        div { class: if fs { "player-meta player-fs-bar" } else { "player-meta" },
+                            div { class: "player-title", "{title}" }
+                            if fs {
+                                button {
+                                    class: "icon-btn",
+                                    title: "Exit fullscreen (Esc)",
+                                    onclick: move |_| {
+                                        set_fullscreen_mode(false, player_fs);
+                                    },
+                                    "⤡"
+                                }
+                            }
                             button {
                                 class: "icon-btn",
                                 title: "Open details",
@@ -408,12 +443,55 @@ pub fn PlayerSidebar() -> Element {
     }
 }
 
+const RAIL_RESIZE_JS: &str = r#"
+(() => {
+  const aside = document.querySelector('.player-sidebar:not(.fullscreen)');
+  if (!aside) return 'no-aside';
+  const send = (msg) => {
+    if (typeof window.__pmvSend === 'function') window.__pmvSend(msg);
+  };
+  const minW = 320;
+  const maxW = () => Math.min(1000, Math.floor(window.innerWidth * 0.72));
+  const onMove = (e) => {
+    if (!window.__pmvRailBaseW) {
+      window.__pmvRailBaseW = aside.getBoundingClientRect().width;
+      window.__pmvRailBaseX = e.clientX;
+    }
+    const w = Math.round(
+      Math.min(maxW(), Math.max(minW, window.__pmvRailBaseW + (window.__pmvRailBaseX - e.clientX)))
+    );
+    document.documentElement.style.setProperty('--player-rail-w', w + 'px');
+    const main = document.getElementById('main');
+    if (main) main.style.setProperty('--player-rail-w', w + 'px');
+    window.__pmvRailLastW = w;
+  };
+  const onUp = () => {
+    window.removeEventListener('pointermove', onMove);
+    window.removeEventListener('pointerup', onUp);
+    window.removeEventListener('pointercancel', onUp);
+    document.body.classList.remove('is-resizing-rail');
+    const w = window.__pmvRailLastW;
+    window.__pmvRailBaseW = null;
+    window.__pmvRailBaseX = null;
+    if (w) send('rail|' + w);
+  };
+  document.body.classList.add('is-resizing-rail');
+  window.__pmvRailBaseW = null;
+  window.__pmvRailBaseX = null;
+  window.addEventListener('pointermove', onMove);
+  window.addEventListener('pointerup', onUp);
+  window.addEventListener('pointercancel', onUp);
+  return 'ok';
+})()
+"#;
+
 async fn handle_player_msg(
     raw: &str,
     now_playing: Signal<Option<PlayableVideo>>,
     mut start_at: Signal<f64>,
     mut queue_tick: Signal<u32>,
     player_fs: Signal<bool>,
+    mut player_rail_w: Signal<Option<u32>>,
     watched_map: &mut Signal<HashMap<String, f64>>,
 ) {
     if raw == "ended" {
@@ -423,6 +501,15 @@ async fn handle_player_msg(
     }
     if raw == "toggle-fs" {
         set_fullscreen_mode(!player_fs(), player_fs);
+        return;
+    }
+    if let Some(w) = raw.strip_prefix("rail|") {
+        if let Ok(px) = w.parse::<u32>() {
+            if (320..=1000).contains(&px) {
+                player_rail_w.set(Some(px));
+                crate::app::save_player_rail_width(px);
+            }
+        }
         return;
     }
     if let Some(rest) = raw.strip_prefix("reorder|") {

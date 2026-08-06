@@ -24,10 +24,8 @@ html, body {
   margin: 0;
   padding: 0;
   min-height: 100%;
-  background:
-    radial-gradient(1100px 520px at 8% -8%, var(--accent-glow), transparent 55%),
-    radial-gradient(900px 480px at 92% 0%, rgba(251, 146, 60, 0.1), transparent 50%),
-    var(--bg);
+  /* Flat bg — no multi-layer radial gradients (expensive with WebKitGTK). */
+  background: var(--bg);
   color: var(--text);
   font-family: var(--font);
   overflow: hidden;
@@ -76,8 +74,8 @@ input:focus, select:focus {
   justify-content: space-between;
   padding-left: 12px;
   border-bottom: 1px solid var(--border);
-  background: rgba(12, 14, 18, 0.92);
-  backdrop-filter: blur(16px);
+  background: #0e1016;
+  /* No backdrop-filter — forces expensive offscreen passes on WebKitGTK. */
   user-select: none;
   -webkit-app-region: drag;
 }
@@ -143,44 +141,57 @@ input:focus, select:focus {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  /* Nav collapses based on main column width (player rail can steal viewport). */
+  container-type: inline-size;
+  container-name: main;
 }
 .navbar {
+  --nav-pad: 0.55rem;
   height: var(--nav-h);
   flex-shrink: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0 var(--nav-pad);
+  border-bottom: 1px solid var(--border);
+  background: #141822;
+  min-width: 0;
+  position: relative;
+  z-index: 40;
+}
+.nav-left {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
-  padding: 0 0.75rem;
-  border-bottom: 1px solid var(--border);
-  background: rgba(20, 24, 32, 0.85);
-  backdrop-filter: blur(12px);
+  gap: 0.35rem;
   min-width: 0;
 }
 .nav-brand {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.45rem;
   font-weight: 800;
-  font-size: 1.05rem;
+  font-size: 0.98rem;
   letter-spacing: -0.03em;
   flex-shrink: 0;
+  padding: 0.15rem 0.2rem;
 }
 .nav-brand img {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
 }
 .nav-links {
   display: flex;
-  gap: 0.2rem;
+  gap: 0.1rem;
   flex-wrap: nowrap;
   min-width: 0;
 }
 .nav-link {
-  padding: 0.35rem 0.55rem;
+  padding: 0.32rem 0.5rem;
   border-radius: 8px;
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   font-weight: 500;
   white-space: nowrap;
 }
@@ -188,26 +199,143 @@ input:focus, select:focus {
   color: var(--text);
   background: var(--surface);
 }
+.nav-overflow {
+  position: relative;
+  display: none;
+  flex-shrink: 0;
+}
+.nav-icon-btn {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  background: var(--surface);
+  font-size: 1rem;
+  line-height: 1;
+}
+.nav-icon-btn:hover,
+.nav-icon-btn.on {
+  color: var(--text);
+  background: var(--surface-2);
+}
+.nav-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 168px;
+  padding: 0.35rem;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: #171b24;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  z-index: 60;
+}
+.nav-menu-item {
+  padding: 0.45rem 0.65rem;
+  border-radius: 7px;
+  color: var(--text);
+  font-size: 0.85rem;
+}
+.nav-menu-item:hover {
+  background: var(--surface);
+}
+.nav-menu-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  background: transparent;
+  cursor: default;
+}
 .nav-search {
-  flex: 1;
-  min-width: 100px;
-  max-width: 360px;
-  margin-left: auto;
+  min-width: 0;
+  width: 100%;
+  max-width: 420px;
+  justify-self: stretch;
+}
+.nav-search input {
+  width: 100%;
+  padding: 0.4rem 0.65rem;
+  font-size: 0.85rem;
+}
+.nav-right {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-shrink: 0;
+  min-width: 0;
+}
+.nav-queue-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.32rem 0.55rem;
+  border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.nav-queue-btn:hover {
+  background: var(--surface-2);
+}
+.nav-queue-badge {
+  min-width: 1.25rem;
+  padding: 0.05rem 0.35rem;
+  border-radius: 999px;
+  background: rgba(249, 115, 22, 0.2);
+  color: var(--accent-2);
+  font-size: 0.72rem;
+  text-align: center;
 }
 .nav-user {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  color: var(--muted);
-  font-size: 0.85rem;
-  flex-shrink: 0;
   min-width: 0;
+  font-size: 0.8rem;
+  color: var(--muted);
 }
 .nav-user-name {
-  max-width: 120px;
+  max-width: 110px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  padding: 0.25rem 0.35rem;
+}
+.nav-signin {
+  padding: 0.35rem 0.65rem !important;
+  font-size: 0.8rem !important;
+}
+
+/* Collapse against the *main column* (not the full window) so a wide player rail
+   correctly switches the chrome into compact mode. */
+@container main (max-width: 900px) {
+  .nav-links-secondary { display: none; }
+  .nav-overflow { display: block; }
+  .nav-queue-label { display: none; }
+  .nav-user-name { max-width: 72px; }
+}
+@container main (max-width: 640px) {
+  .nav-links-primary { display: none; }
+  .nav-brand-text { display: none; }
+  .nav-signin { padding: 0.32rem 0.5rem !important; }
+  .navbar {
+    --nav-pad: 0.4rem;
+    gap: 0.35rem;
+  }
+}
+@container main (max-width: 420px) {
+  .nav-search input {
+    padding: 0.35rem 0.5rem;
+    font-size: 0.8rem;
+  }
+  .nav-user-name { display: none; }
 }
 
 .content {
@@ -215,31 +343,31 @@ input:focus, select:focus {
   min-height: 0;
   overflow: auto;
   padding: 1rem 1.1rem 1.25rem;
-  contain: layout;
+  contain: strict;
+  content-visibility: auto;
 }
 
-@media (max-width: 1100px) {
-  .nav-hide-md { display: none; }
-  .nav-search { max-width: 220px; }
-  .player-sidebar {
-    width: min(380px, 46vw);
-  }
-}
 @media (max-width: 860px) {
-  .nav-hide-sm { display: none; }
-  .nav-brand-text { display: none; }
-  .nav-search { max-width: 160px; }
   .app-shell.has-sidebar {
     flex-direction: column;
   }
   .player-sidebar {
-    width: 100%;
-    max-height: 48vh;
+    width: 100% !important;
+    max-width: none;
+    max-height: 52vh;
     border-left: none;
     border-top: 1px solid var(--border);
   }
-  .player-stage video {
-    max-height: 28vh;
+  .player-rail-resize {
+    display: none;
+  }
+  .player-stage {
+    flex: 1 1 auto;
+    min-height: 160px;
+    max-height: 32vh;
+  }
+  .sidebar-queue {
+    max-height: none;
   }
 }
 
@@ -333,6 +461,16 @@ input:focus, select:focus {
   flex-wrap: wrap;
   gap: 0.45rem;
   margin-bottom: 0.25rem;
+  /* Room for chip hover glow without clipping against section edges. */
+  padding: 2px 1px 4px;
+  overflow: visible;
+}
+.tags-section {
+  overflow: visible;
+}
+.tags-section .chip-row {
+  max-height: none;
+  overflow: visible;
 }
 /* Popular tags / category pills — high-contrast, clickable, site-adjacent */
 .chip {
@@ -353,8 +491,7 @@ input:focus, select:focus {
     color 0.14s ease,
     border-color 0.14s ease,
     background 0.14s ease,
-    box-shadow 0.14s ease,
-    transform 0.12s ease;
+    box-shadow 0.14s ease;
 }
 .chip:hover,
 .chip:focus-visible,
@@ -364,11 +501,10 @@ input:focus, select:focus {
   background: linear-gradient(180deg, rgba(249, 115, 22, 0.28) 0%, rgba(249, 115, 22, 0.12) 100%);
   box-shadow:
     0 0 0 1px rgba(249, 115, 22, 0.15),
-    0 6px 18px rgba(249, 115, 22, 0.12);
-  transform: translateY(-1px);
+    0 4px 14px rgba(249, 115, 22, 0.12);
 }
 .chip:active {
-  transform: translateY(0);
+  background: linear-gradient(180deg, rgba(249, 115, 22, 0.34) 0%, rgba(249, 115, 22, 0.16) 100%);
 }
 .chip-count {
   font-size: 0.7rem;
@@ -382,9 +518,6 @@ input:focus, select:focus {
 .chip.active .chip-count {
   color: #fdba74;
   background: rgba(249, 115, 22, 0.2);
-}
-.tags-section .chip-row {
-  max-height: none;
 }
 .tabs {
   display: flex;
@@ -457,13 +590,9 @@ input:focus, select:focus {
   height: 100%;
   object-fit: cover;
   display: block;
-  transition: opacity 0.2s ease, transform 0.3s ease;
 }
 .thumb-wrap img.dim {
   opacity: 0;
-}
-.thumb-wrap:hover img.thumb:not(.dim) {
-  transform: scale(1.03);
 }
 .preview-video {
   position: absolute;
@@ -473,7 +602,6 @@ input:focus, select:focus {
   object-fit: cover;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.15s ease;
   background: #000;
 }
 .preview-video.show {
@@ -573,6 +701,26 @@ input:focus, select:focus {
   font-size: 0.75rem;
   color: var(--muted);
 }
+.uploader-link {
+  color: var(--muted);
+  text-decoration: none;
+}
+.uploader-link:hover {
+  color: var(--accent, #f97316);
+  text-decoration: underline;
+}
+.discover-block {
+  margin-top: 1rem;
+}
+.discover-label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 0.45rem;
+}
 .card-actions {
   display: flex;
   gap: 0.35rem;
@@ -589,13 +737,51 @@ input:focus, select:focus {
 
 /* Right player sidebar */
 .player-sidebar {
-  width: clamp(320px, 36vw, 520px);
+  /* Scales with window so maximize grows the video, not only browse.
+     User drag overrides via --player-rail-w (px). */
+  width: var(--player-rail-w, clamp(340px, 42vw, 780px));
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
   min-height: 0;
+  min-width: 320px;
+  max-width: min(72vw, 1000px);
+  position: relative;
   background: rgba(12, 14, 18, 0.96);
   border-left: 1px solid var(--border);
+}
+.player-rail-resize {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  z-index: 8;
+  cursor: col-resize;
+  touch-action: none;
+}
+.player-rail-resize::after {
+  content: "";
+  position: absolute;
+  left: 1px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2px;
+  height: 48px;
+  border-radius: 2px;
+  background: transparent;
+  transition: background 0.15s ease;
+}
+.player-rail-resize:hover::after,
+body.is-resizing-rail .player-rail-resize::after {
+  background: var(--accent);
+}
+body.is-resizing-rail {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+body.is-resizing-rail * {
+  cursor: col-resize !important;
 }
 .app-shell.player-fs .app-main {
   /* Hide, don't unmount — same as v1 AppShell, so the page tree stays put. */
@@ -604,27 +790,41 @@ input:focus, select:focus {
 .app-shell.player-fs .player-sidebar,
 .player-sidebar.fullscreen {
   width: 100%;
+  max-width: none;
+  min-width: 0;
   border-left: none;
   border-top: none;
   flex: 1;
   max-height: none;
+  position: relative;
 }
 .player-stage {
   position: relative;
   background: #000;
   border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
+  /* Prefer video growth when the window/rail grows; queue keeps a floor. */
+  flex: 3 1 0;
+  min-height: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
 }
 .player-stage video,
 .player-video {
   display: block;
   width: 100%;
-  aspect-ratio: 16 / 9;
-  max-height: 42vh;
+  height: 100%;
+  max-height: 100%;
   object-fit: contain;
   background: #000;
-  contain: layout paint;
-  transform: translateZ(0);
+  /* Promote to its own compositor layer (GPU path on WebKitGTK). */
+  transform: translate3d(0, 0, 0);
+  -webkit-transform: translate3d(0, 0, 0);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  contain: strict;
+  will-change: contents;
 }
 .player-sidebar.fullscreen {
   background: #000;
@@ -642,10 +842,8 @@ input:focus, select:focus {
   width: 100%;
   height: 100%;
   max-height: none;
-  aspect-ratio: auto;
 }
-/* Kill residual chrome strips in FS (meta/queue stay mounted but hidden). */
-.player-sidebar.fullscreen .player-meta,
+/* Queue stays mounted but hidden in FS. */
 .player-sidebar.fullscreen .sidebar-queue {
   display: none !important;
   border: none !important;
@@ -677,13 +875,13 @@ video::-webkit-media-controls-fullscreen-button {
   place-items: center;
   font-size: 0.95rem;
 }
-.player-stage:hover .player-fs-btn,
-.player-sidebar.fullscreen .player-fs-btn {
+.player-stage:hover .player-fs-btn {
   opacity: 1;
 }
 .player-fs-btn:hover { background: var(--accent); }
 .player-error {
-  aspect-ratio: 16 / 9;
+  width: 100%;
+  min-height: 160px;
   display: grid;
   place-items: center;
   color: #fb7185;
@@ -699,12 +897,41 @@ video::-webkit-media-controls-fullscreen-button {
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
-.player-meta.is-hidden {
-  display: none;
+/* Fullscreen: minimal auto-hiding title bar over the video. */
+.player-sidebar.fullscreen .player-meta.player-fs-bar {
+  display: flex !important;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 6;
+  height: 44px;
+  padding: 0 0.75rem 0 1rem;
+  border: none;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.78), rgba(0, 0, 0, 0.35) 70%, transparent);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
 }
-.player-sidebar.fullscreen .player-meta {
-  border-bottom: none;
-  border-top: 1px solid var(--border);
+.player-sidebar.fullscreen:hover .player-meta.player-fs-bar,
+.player-sidebar.fullscreen .player-meta.player-fs-bar:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+}
+.player-sidebar.fullscreen .player-fs-bar .player-title {
+  font-size: 0.95rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: #fff;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.55);
+}
+.player-sidebar.fullscreen .player-fs-bar .icon-btn {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+.player-sidebar.fullscreen .player-fs-bar .icon-btn:hover {
+  background: var(--accent);
+  color: #fff;
 }
 .player-title {
   flex: 1;
@@ -716,8 +943,9 @@ video::-webkit-media-controls-fullscreen-button {
   text-overflow: ellipsis;
 }
 .sidebar-queue {
-  flex: 1;
-  min-height: 0;
+  flex: 1 1 0;
+  min-height: 140px;
+  max-height: 46%;
   display: flex;
   flex-direction: column;
 }
@@ -1056,12 +1284,6 @@ video::-webkit-media-controls-fullscreen-button {
   margin-right: auto;
 }
 
-.video-card {
-  transition: transform 0.15s ease;
-}
-.video-card:hover {
-  transform: translateY(-2px);
-}
 .thumb-wrap {
   border-radius: var(--radius);
   overflow: hidden;

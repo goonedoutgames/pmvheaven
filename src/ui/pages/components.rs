@@ -2,7 +2,7 @@ use crate::models::{AccountUser, PlayableVideo, VideoSummary};
 use crate::services::player::{self, OpenIntent};
 use crate::services::queue;
 use crate::services::repo::watched_progress_map;
-use crate::ui::nav::Route;
+use crate::ui::nav::{browse_link, Route};
 use dioxus::prelude::*;
 use std::collections::HashMap;
 
@@ -30,6 +30,7 @@ pub fn VideoCard(video: VideoSummary) -> Element {
     let user = use_context::<Signal<Option<AccountUser>>>();
     let now_playing = use_context::<Signal<Option<PlayableVideo>>>();
     let mut play_choice = use_context::<Signal<Option<VideoSummary>>>();
+    let hover_previews = use_context::<Signal<bool>>();
     let navigator = use_navigator();
     let mut hovering = use_signal(|| false);
     let id = video.id.clone();
@@ -44,6 +45,7 @@ pub fn VideoCard(video: VideoSummary) -> Element {
     let signed_in = user().is_some();
     let is_watched = signed_in && progress.is_some();
     let rating = video.rating;
+    let allow_preview = hover_previews() && has_preview;
 
     let open_from_thumb = {
         let video = video.clone();
@@ -72,14 +74,13 @@ pub fn VideoCard(video: VideoSummary) -> Element {
         }
     };
 
-    let playing = now_playing().is_some();
-    let allow_preview = has_preview && !playing;
-
     rsx! {
         div {
             class: if is_watched { "video-card is-watched" } else { "video-card" },
             onmouseenter: move |_| {
-                hovering.set(true);
+                if allow_preview {
+                    hovering.set(true);
+                }
             },
             onmouseleave: move |_| {
                 hovering.set(false);
@@ -93,6 +94,7 @@ pub fn VideoCard(video: VideoSummary) -> Element {
                         src: "{video.thumbnail_url}",
                         alt: "{video.title}",
                         loading: "lazy",
+                        decoding: "async",
                     }
                 }
                 if hovering() && allow_preview {
@@ -144,7 +146,23 @@ pub fn VideoCard(video: VideoSummary) -> Element {
                 "{video.title}"
             }
             div { class: "card-meta",
-                "{video.uploader_username} · {format_views(video.views)}"
+                Link {
+                    to: browse_link(
+                        "-releaseDate",
+                        None,
+                        None,
+                        Some(if video.uploader_username.is_empty() {
+                            video.uploader.clone()
+                        } else {
+                            video.uploader_username.clone()
+                        }),
+                        None,
+                        None,
+                    ),
+                    class: "uploader-link",
+                    "{video.uploader_username}"
+                }
+                " · {format_views(video.views)}"
             }
             div { class: "card-actions",
                 button {

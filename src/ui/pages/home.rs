@@ -1,6 +1,6 @@
 use crate::models::{FeedParams, PopularTag, VideoSort, VideoSummary};
 use crate::services::pmv::shared_client;
-use crate::ui::nav::Route;
+use crate::ui::nav::browse_link;
 use crate::ui::pages::components::{format_views, VideoGrid};
 use dioxus::prelude::*;
 
@@ -72,11 +72,14 @@ pub fn Home() -> Element {
                     div { class: "chip-row",
                         for t in tags() {
                             Link {
-                                to: Route::Browse {
-                                    sort: Some("-releaseDate".into()),
-                                    tags: Some(t.name.clone()),
-                                    creator: None,
-                                },
+                                to: browse_link(
+                                    "-releaseDate",
+                                    Some(t.name.clone()),
+                                    None,
+                                    None,
+                                    None,
+                                    None,
+                                ),
                                 class: "chip",
                                 span { "{t.name}" }
                                 if t.usage_count > 0 {

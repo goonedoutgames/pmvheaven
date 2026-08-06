@@ -4,6 +4,9 @@
 //! against bleeding-edge compositors. Prefer preloading the **system** Wayland
 //! client so DMA-BUF / GPU compositing can stay enabled (much better for video).
 //!
+//! Also bias GStreamer toward host hardware codecs (VAAPI / NVDEC) when the
+//! AppImage's bundled plugin set is incomplete.
+//!
 //! Compare modes with `PMV_GFX`:
 //! - `wayland` (default) — system libwayland preload, DMABUF left on
 //! - `dmabuf-off` — preload + `WEBKIT_DISABLE_DMABUF_RENDERER=1`
@@ -21,7 +24,9 @@ const PRELOADED_FLAG: &str = "PMV_WAYLAND_PRELOADED";
 /// Call before any WebKit / GTK init.
 pub fn prepare() {
     let mode = env::var("PMV_GFX").unwrap_or_else(|_| "wayland".into());
+    apply_gpu_defaults(&mode);
     apply_webkit_flags(&mode);
+    prefer_host_gstreamer_plugins();
 
     if mode == "stock" {
         eprintln!("[pmvheaven] PMV_GFX=stock (no Wayland/WebKit graphics fixes)");
@@ -65,6 +70,21 @@ fn webkit_flag_note(mode: &str) -> &'static str {
     }
 }
 
+/// Keep the fast path on unless the user picked a compatibility mode.
+fn apply_gpu_defaults(mode: &str) {
+    if matches!(mode, "wayland" | "stock") {
+        // Clear accidental disable flags from parent shells / desktop files.
+        if mode == "wayland" {
+            env::remove_var("WEBKIT_DISABLE_DMABUF_RENDERER");
+            env::remove_var("WEBKIT_DISABLE_COMPOSITING_MODE");
+        }
+        // Prefer EGL over GLX when GTK has a choice (helps DMA-BUF import).
+        set_if_unset("GDK_GL", "gles");
+        set_if_unset("GST_GL_PLATFORM", "egl");
+        set_if_unset("GST_GL_API", "gles2");
+    }
+}
+
 fn apply_webkit_flags(mode: &str) {
     // Only set when unset so users can still override explicitly.
     match mode {
@@ -76,6 +96,49 @@ fn apply_webkit_flags(mode: &str) {
             set_if_unset("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
         }
         _ => {}
+    }
+}
+
+/// AppImages often ship a partial GStreamer plugin set without VAAPI/NVDEC.
+/// Point GStreamer at the host plugin dir first so hardware decode can load.
+fn prefer_host_gstreamer_plugins() {
+    const HOST_DIRS: &[&str] = &[
+        "/usr/lib/gstreamer-1.0",
+        "/usr/lib64/gstreamer-1.0",
+        "/usr/lib/x86_64-linux-gnu/gstreamer-1.0",
+        "/usr/lib/aarch64-linux-gnu/gstreamer-1.0",
+    ];
+
+    let host = HOST_DIRS
+        .iter()
+        .find(|p| Path::new(p).is_dir())
+        .map(|p| (*p).to_string());
+
+    let Some(host) = host else {
+        return;
+    };
+
+    // GST_PLUGIN_SYSTEM_PATH_1_0 is the modern override; prepend host.
+    match env::var("GST_PLUGIN_SYSTEM_PATH_1_0") {
+        Ok(existing) if !existing.is_empty() => {
+            if !existing.split(':').any(|p| p == host) {
+                env::set_var(
+                    "GST_PLUGIN_SYSTEM_PATH_1_0",
+                    format!("{host}:{existing}"),
+                );
+            }
+        }
+        _ => env::set_var("GST_PLUGIN_SYSTEM_PATH_1_0", &host),
+    }
+
+    // Also prepend into GST_PLUGIN_PATH for older plugin loaders.
+    match env::var("GST_PLUGIN_PATH") {
+        Ok(existing) if !existing.is_empty() => {
+            if !existing.split(':').any(|p| p == host) {
+                env::set_var("GST_PLUGIN_PATH", format!("{host}:{existing}"));
+            }
+        }
+        _ => env::set_var("GST_PLUGIN_PATH", &host),
     }
 }
 

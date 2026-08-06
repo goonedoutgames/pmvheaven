@@ -1,5 +1,6 @@
 use crate::models::{PlayableVideo, VideoSummary};
 use crate::paths;
+use crate::services::db::{get_setting, set_setting};
 use crate::services::pmv::get_account_user;
 use crate::services::repo::watched_progress_map;
 use crate::services::stream_proxy;
@@ -8,6 +9,9 @@ use crate::ui::legacy_gate::LegacyDbGate;
 use crate::ui::nav::Route;
 use crate::ui::update_prompt::UpdatePrompt;
 use dioxus::prelude::*;
+
+const PLAYER_RAIL_WIDTH_KEY: &str = "player_rail_width";
+const HOVER_PREVIEWS_KEY: &str = "hover_previews";
 
 #[component]
 pub fn App() -> Element {
@@ -22,6 +26,8 @@ pub fn App() -> Element {
     let proxy_base = use_signal(|| String::new());
     let watched_map = use_signal(watched_progress_map);
     let player_fs = use_signal(|| false);
+    let player_rail_w = use_signal(load_player_rail_width);
+    let hover_previews = use_signal(load_hover_previews);
 
     use_context_provider(|| user);
     use_context_provider(|| queue_open);
@@ -32,6 +38,8 @@ pub fn App() -> Element {
     use_context_provider(|| proxy_base);
     use_context_provider(|| watched_map);
     use_context_provider(|| player_fs);
+    use_context_provider(|| player_rail_w);
+    use_context_provider(|| hover_previews);
 
     use_future(move || async move {
         if show_legacy() {
@@ -41,11 +49,14 @@ pub fn App() -> Element {
     });
 
     let main_class = if player_fs() { "is-player-fs" } else { "" };
+    let rail_style = player_rail_w()
+        .map(|w| format!("--player-rail-w:{w}px"))
+        .unwrap_or_default();
 
     rsx! {
         document::Link { rel: "stylesheet", href: MAIN_CSS }
         document::Script { src: HLS_JS }
-        div { id: "main", class: "{main_class}",
+        div { id: "main", class: "{main_class}", style: "{rail_style}",
             WindowChrome {}
             if show_legacy() {
                 LegacyDbGate {
@@ -66,6 +77,26 @@ pub fn App() -> Element {
             }
         }
     }
+}
+
+fn load_player_rail_width() -> Option<u32> {
+    get_setting(PLAYER_RAIL_WIDTH_KEY)
+        .and_then(|s| s.parse().ok())
+        .filter(|w| (320..=1000).contains(w))
+}
+
+pub fn save_player_rail_width(w: u32) {
+    if (320..=1000).contains(&w) {
+        set_setting(PLAYER_RAIL_WIDTH_KEY, &w.to_string());
+    }
+}
+
+fn load_hover_previews() -> bool {
+    matches!(get_setting(HOVER_PREVIEWS_KEY).as_deref(), Some("1") | Some("true"))
+}
+
+pub fn save_hover_previews(on: bool) {
+    set_setting(HOVER_PREVIEWS_KEY, if on { "1" } else { "0" });
 }
 
 async fn bootstrap(
