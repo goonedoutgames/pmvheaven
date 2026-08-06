@@ -99,9 +99,15 @@ fn apply_webkit_flags(mode: &str) {
     }
 }
 
-/// AppImages often ship a partial GStreamer plugin set without VAAPI/NVDEC.
-/// Point GStreamer at the host plugin dir first so hardware decode can load.
+/// Prefer host GStreamer plugins only for *native* installs (dx serve / distro
+/// package). AppImages must NOT mix host plugins with bundled Ubuntu GST libs —
+/// that produces undefined-symbol spam and missing autoaudiosink freezes.
 fn prefer_host_gstreamer_plugins() {
+    if env::var_os("APPIMAGE").is_some() || env::var_os("APPDIR").is_some() {
+        // AppRun owns GST_PLUGIN_* for a consistent in-image ABI.
+        return;
+    }
+
     const HOST_DIRS: &[&str] = &[
         "/usr/lib/gstreamer-1.0",
         "/usr/lib64/gstreamer-1.0",

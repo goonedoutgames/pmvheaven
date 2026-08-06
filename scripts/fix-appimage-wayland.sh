@@ -4,8 +4,9 @@
 # 1. Bundles WebKitGTK helper processes (Network/Web/GPU) into the AppDir
 # 2. Byte-patches libwebkit2gtk hardcoded helper paths → /tmp/.pmvheaven-wk
 # 3. Strips bundled libwayland* so rolling compositors use the system ABI
-# 4. Installs an AppRun that symlinks helpers, preloads Wayland, prefers host GST
-# 5. Repacks with appimagetool when available
+# 4. Bundles GStreamer plugins matching the AppImage's libgstreamer ABI
+# 5. Installs an AppRun that symlinks helpers, preloads Wayland, uses AppDir GST only
+# 6. Repacks with appimagetool when available
 #
 # Usage:
 #   ./scripts/fix-appimage-wayland.sh [path/to/pmvheaven_*.AppImage]
@@ -83,6 +84,63 @@ else
   echo "    WARNING: patchelf not found — helpers may fail to load bundled libs"
 fi
 
+echo "==> Bundling GStreamer plugins (same ABI as AppImage libgstreamer)"
+# linuxdeploy only pulls core libgst*.so — not the plugin modules. Mixing host
+# plugins (e.g. Arch 1.28) with Ubuntu 1.24 libs causes undefined-symbol storms.
+GST_SRC=""
+for d in \
+  /usr/lib/x86_64-linux-gnu/gstreamer-1.0 \
+  /usr/lib/aarch64-linux-gnu/gstreamer-1.0 \
+  /usr/lib64/gstreamer-1.0 \
+  /usr/lib/gstreamer-1.0
+do
+  if [[ -d "$d" ]] && compgen -G "$d/libgst*.so" >/dev/null 2>&1; then
+    GST_SRC="$d"
+    break
+  fi
+done
+
+if [[ -z "$GST_SRC" ]]; then
+  echo "ERROR: no gstreamer-1.0 plugin dir on build host." >&2
+  echo "Install gstreamer1.0-plugins-base/good (Debian) or gst-plugins-base/good (Arch)." >&2
+  exit 1
+fi
+
+GST_DST_PARENT="$(dirname "$WK_DST")"  # e.g. .../usr/lib/x86_64-linux-gnu
+GST_DST="$GST_DST_PARENT/gstreamer-1.0"
+mkdir -p "$GST_DST"
+# Copy plugins; skip cache files that are machine-specific
+rsync -a --delete \
+  --exclude='*.pyc' \
+  --exclude='__pycache__' \
+  --exclude='*.debug' \
+  "$GST_SRC/" "$GST_DST/" 2>/dev/null \
+  || cp -a "$GST_SRC"/. "$GST_DST"/
+PLUGIN_COUNT="$(find "$GST_DST" -maxdepth 1 -name 'libgst*.so' | wc -l)"
+echo "    copied $PLUGIN_COUNT plugins from $GST_SRC → ${GST_DST#"$APPDIR"/}"
+if [[ "$PLUGIN_COUNT" -lt 10 ]]; then
+  echo "ERROR: too few GStreamer plugins copied ($PLUGIN_COUNT)" >&2
+  exit 1
+fi
+# gst-plugin-scanner lives next to plugins on some distros / in libexec on others
+for scanner in \
+  "$GST_SRC/gst-plugin-scanner" \
+  /usr/libexec/gstreamer-1.0/gst-plugin-scanner \
+  /usr/lib/x86_64-linux-gnu/gstreamer1.0/gstreamer-1.0/gst-plugin-scanner \
+  /usr/lib/gstreamer-1.0/gst-plugin-scanner
+do
+  if [[ -x "$scanner" ]]; then
+    mkdir -p "$APPDIR/usr/libexec/gstreamer-1.0"
+    cp -a "$scanner" "$APPDIR/usr/libexec/gstreamer-1.0/gst-plugin-scanner"
+    if command -v patchelf >/dev/null 2>&1; then
+      patchelf --set-rpath '$ORIGIN/../../lib:$ORIGIN/../../lib/x86_64-linux-gnu' \
+        "$APPDIR/usr/libexec/gstreamer-1.0/gst-plugin-scanner" 2>/dev/null || true
+    fi
+    echo "    bundled gst-plugin-scanner"
+    break
+  fi
+done
+
 echo "==> Relocating hardcoded WebKit paths → $WK_LINK"
 python3 "$RELOCATE" "$APPDIR" --link-path "$WK_LINK"
 
@@ -149,17 +207,31 @@ if [[ -z "\${LD_PRELOAD:-}" ]]; then
   done
 fi
 
-# Prefer host GStreamer plugins (VAAPI / NVDEC) over the AppImage's partial set.
-for gst in \\
-  /usr/lib/gstreamer-1.0 \\
-  /usr/lib64/gstreamer-1.0 \\
-  /usr/lib/x86_64-linux-gnu/gstreamer-1.0; do
-  if [[ -d "\$gst" ]]; then
-    export GST_PLUGIN_SYSTEM_PATH_1_0="\$gst\${GST_PLUGIN_SYSTEM_PATH_1_0:+:\$GST_PLUGIN_SYSTEM_PATH_1_0}"
-    export GST_PLUGIN_PATH="\$gst\${GST_PLUGIN_PATH:+:\$GST_PLUGIN_PATH}"
+# Use ONLY AppImage GStreamer plugins — same ABI as bundled libgstreamer.
+# Mixing host plugins (newer Arch) with Ubuntu libs → undefined symbol freezes.
+GST_PLUGINS=""
+for d in \\
+  "\$HERE/usr/lib/x86_64-linux-gnu/gstreamer-1.0" \\
+  "\$HERE/usr/lib/aarch64-linux-gnu/gstreamer-1.0" \\
+  "\$HERE/usr/lib64/gstreamer-1.0" \\
+  "\$HERE/usr/lib/gstreamer-1.0"; do
+  if [[ -d "\$d" ]]; then
+    GST_PLUGINS="\$d"
     break
   fi
 done
+if [[ -z "\$GST_PLUGINS" ]]; then
+  echo "pmvheaven: gstreamer-1.0 plugins missing from AppImage" >&2
+  exit 1
+fi
+export GST_PLUGIN_SYSTEM_PATH_1_0="\$GST_PLUGINS"
+export GST_PLUGIN_PATH="\$GST_PLUGINS"
+if [[ -x "\$HERE/usr/libexec/gstreamer-1.0/gst-plugin-scanner" ]]; then
+  export GST_PLUGIN_SCANNER="\$HERE/usr/libexec/gstreamer-1.0/gst-plugin-scanner"
+fi
+# Prevent registry from picking up incompatible host plugins.
+export GST_REGISTRY="\$HOME/.cache/pmvheaven/gst-registry.bin"
+mkdir -p "\$HOME/.cache/pmvheaven" 2>/dev/null || true
 
 # Default graphics mode: system Wayland + keep DMABUF (best video FPS).
 export PMV_GFX="\${PMV_GFX:-wayland}"

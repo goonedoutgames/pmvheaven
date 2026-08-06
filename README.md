@@ -43,9 +43,9 @@ dx bundle --platform desktop --release
 
 On Linux this produces an AppImage under:
 
-`target/dx/pmvheaven/bundle/linux/appimage/pmvheaven_2.1.1_x86_64.AppImage`
+`target/dx/pmvheaven/bundle/linux/appimage/pmvheaven_2.1.2_x86_64.AppImage`
 
-Post-process for rolling-release Wayland hosts (strips bundled `libwayland*`, installs an AppRun wrapper):
+Post-process for rolling-release Wayland hosts (bundles WebKit helpers + matching GStreamer plugins, strips bundled `libwayland*`):
 
 ```bash
 ./scripts/fix-appimage-wayland.sh
@@ -57,7 +57,7 @@ No Node runtime is bundled. Windows builds use the same command on a Windows hos
 
 Pushes to `main` run [`.github/workflows/release.yml`](.github/workflows/release.yml):
 
-1. Read semver from `Cargo.toml` (`2.1.1` → tag `v2.1.1`)
+1. Read semver from `Cargo.toml` (`2.1.2` → tag `v2.1.2`)
 2. Skip if that GitHub Release already exists (bump the Cargo version to cut a new one)
 3. Build **Linux AppImage** + **Windows NSIS `.exe` installer**
 4. Publish a GitHub Release with both artifacts
@@ -68,7 +68,7 @@ On launch the app checks `goonedoutgames/pmvheaven` for a newer release and offe
 
 ### Linux graphics A/B (`PMV_GFX`)
 
-On Wayland + AppImage (or any Linux build), the app defaults to **system `libwayland-client` preload**, **host GStreamer plugins** (VAAPI/NVDEC when installed), and leaves WebKit’s DMA-BUF renderer on — usually the best video FPS.
+On Wayland + AppImage, the app defaults to **system `libwayland-client` preload**, **bundled GStreamer plugins** (same ABI as the AppImage’s Ubuntu `libgstreamer`), and leaves WebKit’s DMA-BUF renderer on — usually the best video FPS. Mixing host GST plugins with the AppImage’s libs causes freezes (`autoaudiosink not found`).
 
 After `dx bundle`, always run:
 
@@ -76,15 +76,15 @@ After `dx bundle`, always run:
 ./scripts/fix-appimage-wayland.sh
 ```
 
-That script is **required** for GitHub/CI AppImages: it bundles WebKit helper processes and relocates hardcoded Ubuntu paths so the AppImage launches on Arch/CachyOS and other non-Debian hosts.
+That script is **required** for GitHub/CI AppImages: it bundles WebKit helpers + GStreamer plugins and relocates hardcoded Ubuntu paths so the AppImage launches on Arch/CachyOS and other non-Debian hosts.
 | Mode | Command | Behavior |
 |------|---------|----------|
-| `wayland` (default) | `PMV_GFX=wayland ./…AppImage` | System Wayland preload, DMABUF **on**, host GST plugins |
+| `wayland` (default) | `PMV_GFX=wayland ./…AppImage` | System Wayland preload, DMABUF **on**, AppDir GST plugins |
 | `dmabuf-off` | `PMV_GFX=dmabuf-off ./…AppImage` | Preload + `WEBKIT_DISABLE_DMABUF_RENDERER=1` |
 | `soft` | `PMV_GFX=soft ./…AppImage` | Preload + DMABUF + compositing off (slowest) |
 | `stock` | `PMV_GFX=stock ./…AppImage` | No fixes (baseline / protocol-error repro) |
 
-Startup prints which mode is active on stderr. Install `gstreamer-vaapi` / `gst-plugin-va` (or NVIDIA GST plugins) on the host for hardware decode.
+Startup prints which mode is active on stderr. Native (`dx serve`) installs still prefer host GST plugins for VAAPI/NVDEC when available.
 
 ## Data
 
