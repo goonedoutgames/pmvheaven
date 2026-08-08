@@ -82,8 +82,16 @@ pub struct PlayableVideo {
 
 impl From<&VideoDetail> for PlayableVideo {
     fn from(d: &VideoDetail) -> Self {
+        let mut summary = d.summary.clone();
+        // Prefer real frame size when the API reports it (vertical clips often
+        // ship a wrong/default aspectRatio on the summary).
+        if d.width > 0 && d.height > 0 {
+            summary.aspect_ratio = d.width as f64 / d.height as f64;
+        } else if summary.aspect_ratio <= 0.0 {
+            summary.aspect_ratio = 16.0 / 9.0;
+        }
         Self {
-            summary: d.summary.clone(),
+            summary,
             video_url: d.video_url.clone(),
             hls_master_playlist_url: d.hls_master_playlist_url.clone(),
             hls_enabled: d.hls_enabled,

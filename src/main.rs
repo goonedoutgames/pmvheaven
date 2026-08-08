@@ -45,7 +45,18 @@ fn main() {
         .with_inner_size(dioxus::desktop::tao::dpi::LogicalSize::new(1280.0, 800.0))
         .with_min_inner_size(dioxus::desktop::tao::dpi::LogicalSize::new(900.0, 600.0));
     if let Some(icon) = window_icon() {
+        // Title-bar / Alt-Tab small icon (ICON_SMALL).
         window = window.with_window_icon(Some(icon));
+    }
+    // Taskbar / Win+Tab use ICON_BIG via with_taskbar_icon — Start Menu can look
+    // correct from the installer .ico while the running window still shows the
+    // default unless this is set.
+    #[cfg(target_os = "windows")]
+    {
+        use dioxus::desktop::tao::platform::windows::WindowBuilderExtWindows;
+        if let Some(icon) = window_icon() {
+            window = window.with_taskbar_icon(Some(icon));
+        }
     }
 
     let mut cfg = Config::new()

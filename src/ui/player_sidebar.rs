@@ -107,7 +107,7 @@ pub fn PlayerSidebar() -> Element {
             return;
         }
         let resume = *start_at.peek();
-        let (file_src, hls_src) = now_playing
+        let (file_src, hls_src, hint_ar) = now_playing
             .peek()
             .as_ref()
             .map(|p| {
@@ -119,9 +119,14 @@ pub fn PlayerSidebar() -> Element {
                     .map(|u| proxied_url(&proxy_base.peek(), u))
                     .filter(|u| !u.is_empty())
                     .unwrap_or_default();
-                (file, hls)
+                let ar = if p.summary.aspect_ratio > 0.0 {
+                    p.summary.aspect_ratio
+                } else {
+                    16.0 / 9.0
+                };
+                (file, hls, ar)
             })
-            .unwrap_or_default();
+            .unwrap_or((String::new(), String::new(), 16.0 / 9.0));
         LAST_POS_MS.store((resume * 1000.0) as u64, Ordering::Relaxed);
         spawn(async move {
             tokio::time::sleep(std::time::Duration::from_millis(60)).await;
@@ -166,6 +171,83 @@ pub fn PlayerSidebar() -> Element {
                     send('toggle-fs');
                   }});
                 }}
+
+                // Stage AR from API hint, refined from decoded frame size.
+                // Portrait clips use cover + drag-to-pan to kill letterboxing.
+                const applyStageAr = (ar) => {{
+                  const stage = el.closest('.player-stage');
+                  if (!stage || !(ar > 0)) return;
+                  stage.style.setProperty('--player-ar', String(ar));
+                  const portrait = ar < 1;
+                  stage.classList.toggle('is-portrait', portrait);
+                  stage.classList.toggle('is-cover', portrait);
+                }};
+                applyStageAr({hint_ar});
+                const refineAr = () => {{
+                  if (el.videoWidth > 0 && el.videoHeight > 0) {{
+                    applyStageAr(el.videoWidth / el.videoHeight);
+                  }}
+                }};
+                if (el.readyState >= 1) refineAr();
+                else el.addEventListener('loadedmetadata', refineAr, {{ once: true }});
+                el.addEventListener('loadeddata', refineAr, {{ once: true }});
+
+                if (!el.dataset.panBound) {{
+                  el.dataset.panBound = '1';
+                  let dragging = false;
+                  let startX = 0, startY = 0, posX = 50, posY = 50;
+                  const stageOf = () => el.closest('.player-stage');
+                  const applyPos = () => {{
+                    el.style.objectPosition = posX.toFixed(1) + '% ' + posY.toFixed(1) + '%';
+                  }};
+                  const resetPos = () => {{
+                    posX = 50; posY = 50; applyPos();
+                  }};
+                  el.addEventListener('pointerdown', (e) => {{
+                    const stage = stageOf();
+                    if (!stage || !stage.classList.contains('is-cover')) return;
+                    // Leave native controls alone (bottom strip).
+                    const rect = el.getBoundingClientRect();
+                    if (e.clientY > rect.bottom - 52) return;
+                    if (e.button !== 0) return;
+                    dragging = true;
+                    startX = e.clientX;
+                    startY = e.clientY;
+                    try {{ el.setPointerCapture(e.pointerId); }} catch (err) {{}}
+                    e.preventDefault();
+                  }});
+                  el.addEventListener('pointermove', (e) => {{
+                    if (!dragging) return;
+                    const stage = stageOf();
+                    if (!stage) return;
+                    const dx = e.clientX - startX;
+                    const dy = e.clientY - startY;
+                    startX = e.clientX;
+                    startY = e.clientY;
+                    // Drag content under the viewport (inverse of finger).
+                    const w = Math.max(stage.clientWidth, 1);
+                    const h = Math.max(stage.clientHeight, 1);
+                    posX = Math.max(0, Math.min(100, posX - (dx / w) * 100));
+                    posY = Math.max(0, Math.min(100, posY - (dy / h) * 100));
+                    applyPos();
+                  }});
+                  const endDrag = (e) => {{
+                    if (!dragging) return;
+                    dragging = false;
+                    try {{ el.releasePointerCapture(e.pointerId); }} catch (err) {{}}
+                  }};
+                  el.addEventListener('pointerup', endDrag);
+                  el.addEventListener('pointercancel', endDrag);
+                  el.addEventListener('emptied', resetPos);
+                  el.addEventListener('loadedmetadata', () => {{
+                    // New clip (or quality switch) — center again.
+                    if (el.dataset.vid && el.dataset.vid !== el.dataset.panVid) {{
+                      el.dataset.panVid = el.dataset.vid;
+                      resetPos();
+                    }}
+                  }});
+                }}
+                if (el.dataset.vid) el.dataset.panVid = el.dataset.vid;
 
                 const resume = {resume};
                 const fileSrc = {file_src:?};
@@ -442,9 +524,21 @@ pub fn PlayerSidebar() -> Element {
                     let mut variants = playable.hls_variants.clone();
                     variants.sort_by(|a, b| b.height.cmp(&a.height));
                     let q_cur = player_quality();
+                    let ar = if playable.summary.aspect_ratio > 0.0 {
+                        playable.summary.aspect_ratio
+                    } else {
+                        16.0 / 9.0
+                    };
+                    let portrait = ar < 1.0;
+                    let stage_class = if portrait {
+                        "player-stage is-portrait is-cover"
+                    } else {
+                        "player-stage"
+                    };
+                    let stage_style = format!("--player-ar: {ar}");
 
                     rsx! {
-                        div { class: "player-stage",
+                        div { class: "{stage_class}", style: "{stage_style}",
                             if !has_url {
                                 div { class: "player-error", "No stream URL for this video." }
                             } else {
