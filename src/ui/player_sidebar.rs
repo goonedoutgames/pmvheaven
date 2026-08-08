@@ -172,25 +172,30 @@ pub fn PlayerSidebar() -> Element {
                   }});
                 }}
 
-                // Size the stage to the clip's real AR. Never crop — CSS uses contain.
+                // Stage box tracks the clip AR (refined from decoded frames).
+                // Fitting is always CSS object-fit:contain — never cover/crop.
                 const applyStageAr = (ar) => {{
                   const stage = el.closest('.player-stage');
-                  if (!stage || !(ar > 0)) return;
+                  if (!stage || !(ar > 0) || !Number.isFinite(ar)) return;
                   stage.style.setProperty('--player-ar', String(ar));
                   stage.classList.toggle('is-portrait', ar < 1);
                   stage.classList.remove('is-cover');
                   el.style.objectFit = 'contain';
-                  el.style.removeProperty('object-position');
+                  el.style.objectPosition = 'center';
                 }};
                 applyStageAr({hint_ar});
-                const refineAr = () => {{
-                  if (el.videoWidth > 0 && el.videoHeight > 0) {{
-                    applyStageAr(el.videoWidth / el.videoHeight);
-                  }}
-                }};
-                if (el.readyState >= 1) refineAr();
-                else el.addEventListener('loadedmetadata', refineAr, {{ once: true }});
-                el.addEventListener('loadeddata', refineAr, {{ once: true }});
+                if (!el.dataset.arListen) {{
+                  el.dataset.arListen = '1';
+                  const refineAr = () => {{
+                    const w = el.videoWidth | 0;
+                    const h = el.videoHeight | 0;
+                    if (w > 0 && h > 0) applyStageAr(w / h);
+                  }};
+                  el.addEventListener('loadedmetadata', refineAr);
+                  el.addEventListener('loadeddata', refineAr);
+                }} else if (el.videoWidth > 0 && el.videoHeight > 0) {{
+                  applyStageAr(el.videoWidth / el.videoHeight);
+                }}
 
                 const resume = {resume};
                 const fileSrc = {file_src:?};
