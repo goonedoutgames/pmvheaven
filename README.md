@@ -41,17 +41,17 @@ cargo run
 dx bundle --platform desktop --release
 ```
 
-On Linux this produces an AppImage under:
+**Windows** (CI publishes these): NSIS installer under `target/dx/…` (e.g. `*-setup.exe`).
 
-`target/dx/pmvheaven/bundle/linux/appimage/pmvheaven_2.2.5_x86_64.AppImage`
-
-Post-process for rolling-release Wayland hosts (bundles WebKit helpers + matching GStreamer plugins, strips bundled `libwayland*`):
+**Linux:** no CI AppImage — build from source on your machine:
 
 ```bash
+dx bundle --platform desktop --release
+# optional Wayland/AppImage post-process if you produced an AppImage locally:
 ./scripts/fix-appimage-wayland.sh
 ```
 
-No Node runtime is bundled. Windows builds use the same command on a Windows host (MSI/NSIS via the Dioxus bundler).
+No Node runtime is bundled.
 
 ## Releases (CI)
 
@@ -59,8 +59,10 @@ Pushes to `main` run [`.github/workflows/release.yml`](.github/workflows/release
 
 1. Read semver from `Cargo.toml` (`2.2.5` → tag `v2.2.5`)
 2. Skip if that GitHub Release already exists (bump the Cargo version to cut a new one)
-3. Build **Linux AppImage** + **Windows NSIS `.exe` installer**
-4. Publish a GitHub Release with both artifacts
+3. Build **Windows NSIS `.exe` installer** only
+4. Publish a GitHub Release with that artifact
+
+Linux users: install deps above, then `dx serve` / `dx bundle` from source.
 
 Manual re-run: Actions → **Release** → **Run workflow** (optionally force recreate).
 
@@ -68,15 +70,14 @@ On launch the app checks `goonedoutgames/pmvheaven` for a newer release and offe
 
 ### Linux graphics A/B (`PMV_GFX`)
 
-On Wayland + AppImage, the app defaults to **system `libwayland-client` preload**, **bundled GStreamer plugins** (same ABI as the AppImage’s Ubuntu `libgstreamer`), and leaves WebKit’s DMA-BUF renderer on — usually the best video FPS. Mixing host GST plugins with the AppImage’s libs causes freezes (`autoaudiosink not found`).
-
-After `dx bundle`, always run:
+When you build a Linux AppImage locally, after `dx bundle` run:
 
 ```bash
 ./scripts/fix-appimage-wayland.sh
 ```
 
-That script is **required** for GitHub/CI AppImages: it bundles WebKit helpers + GStreamer plugins and relocates hardcoded Ubuntu paths so the AppImage launches on Arch/CachyOS and other non-Debian hosts.
+That script bundles WebKit helpers + GStreamer plugins and relocates hardcoded Ubuntu paths so the AppImage can launch on Arch/CachyOS and other non-Debian hosts.
+
 | Mode | Command | Behavior |
 |------|---------|----------|
 | `wayland` (default) | `PMV_GFX=wayland ./…AppImage` | System Wayland preload, DMABUF **on**, AppDir GST plugins |
