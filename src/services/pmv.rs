@@ -191,19 +191,7 @@ impl PmvClient {
         }
 
         if let Some(u) = data.get("user").filter(|u| !u.is_null()) {
-            let user = AccountUser {
-                id: str_field(u, &["id", "_id", "customUserId"]),
-                username: {
-                    let n = str_field(u, &["username", "name"]);
-                    if n.is_empty() {
-                        email.to_string()
-                    } else {
-                        n
-                    }
-                },
-                email: opt_str(u, "email").or_else(|| Some(email.to_string())),
-                avatar_url: opt_str(u, "avatarUrl").or_else(|| opt_str(u, "image")),
-            };
+            let user = account_user_from_json(u, Some(email));
             {
                 let db = db();
                 let conn = db.lock().map_err(|_| PmvError::Msg("db lock poisoned".into()))?;
@@ -213,10 +201,10 @@ impl PmvClient {
                 );
             }
             tracing::info!("signed in as {}", user.username);
-            let client = self.clone();
-            tokio::spawn(async move {
-                let _ = client.refresh_profile().await;
-            });
+            // Prefer the session payload (often has the real avatar) over the sign-in body.
+            if let Some(fresh) = self.refresh_profile().await {
+                return Ok(fresh);
+            }
             return Ok(user);
         }
 
@@ -243,12 +231,7 @@ impl PmvClient {
         if u.is_null() {
             return get_account_user();
         }
-        let user = AccountUser {
-            id: str_field(u, &["id", "_id"]),
-            username: str_field(u, &["username", "name"]),
-            email: opt_str(u, "email"),
-            avatar_url: opt_str(u, "avatarUrl").or_else(|| opt_str(u, "image")),
-        };
+        let user = account_user_from_json(u, None);
         {
             let db = db();
             let conn = db.lock().unwrap();
@@ -591,7 +574,7 @@ pub fn get_account_user() -> Option<AccountUser> {
         id: row.pmv_user_id.unwrap_or_default(),
         username: row.username.unwrap_or_default(),
         email: row.email,
-        avatar_url: row.avatar_url,
+        avatar_url: normalize_avatar_url(row.avatar_url),
     })
 }
 
@@ -708,8 +691,65 @@ async fn try_reauth(client: &PmvClient) -> bool {
 
 fn num_field(v: &Value, key: &str) -> f64 {
     v.get(key)
-        .and_then(|x| x.as_f64().or_else(|| x.as_i64().map(|i| i as f64)))
+        .and_then(|x| {
+            x.as_f64()
+                .or_else(|| x.as_i64().map(|i| i as f64))
+                .or_else(|| x.as_u64().map(|u| u as f64))
+                .or_else(|| x.as_str().and_then(|s| s.trim().parse().ok()))
+        })
         .unwrap_or(0.0)
+}
+
+/// Parse display durations like `3:45`, `1:02:03`, `45s`, `12m`.
+pub fn parse_duration_secs(raw: &str) -> u32 {
+    let s = raw.trim();
+    if s.is_empty() {
+        return 0;
+    }
+    if let Ok(n) = s.parse::<u32>() {
+        return n;
+    }
+    let lower = s.to_ascii_lowercase();
+    if let Some(rest) = lower.strip_suffix('s') {
+        if !rest.contains(':') && !rest.contains('m') {
+            if let Ok(n) = rest.trim().parse::<u32>() {
+                return n;
+            }
+        }
+    }
+    if let Some(rest) = lower.strip_suffix('m') {
+        if !rest.contains(':') {
+            if let Ok(n) = rest.trim().parse::<u32>() {
+                return n.saturating_mul(60);
+            }
+        }
+    }
+    let parts: Vec<&str> = s.split(':').collect();
+    match parts.as_slice() {
+        [m, sec] => {
+            let m: u32 = m.parse().unwrap_or(0);
+            let sec: u32 = sec.parse().unwrap_or(0);
+            m.saturating_mul(60).saturating_add(sec)
+        }
+        [h, m, sec] => {
+            let h: u32 = h.parse().unwrap_or(0);
+            let m: u32 = m.parse().unwrap_or(0);
+            let sec: u32 = sec.parse().unwrap_or(0);
+            h.saturating_mul(3600)
+                .saturating_add(m.saturating_mul(60))
+                .saturating_add(sec)
+        }
+        _ => 0,
+    }
+}
+
+/// Prefer numeric seconds; fall back to parsing the display duration string.
+pub fn effective_duration_secs(v: &VideoSummary) -> u32 {
+    if v.duration_seconds > 0 {
+        v.duration_seconds
+    } else {
+        parse_duration_secs(&v.duration)
+    }
 }
 
 fn str_field(v: &Value, keys: &[&str]) -> String {
@@ -728,6 +768,62 @@ fn opt_str(v: &Value, key: &str) -> Option<String> {
         .and_then(|x| x.as_str())
         .filter(|s| !s.is_empty())
         .map(|s| s.to_string())
+}
+
+fn opt_str_keys(v: &Value, keys: &[&str]) -> Option<String> {
+    for k in keys {
+        if let Some(s) = opt_str(v, k) {
+            return Some(s);
+        }
+    }
+    None
+}
+
+fn account_user_from_json(u: &Value, email_fallback: Option<&str>) -> AccountUser {
+    let mut username = str_field(u, &["username", "name", "displayName", "display_name"]);
+    if username.is_empty() {
+        if let Some(e) = email_fallback {
+            username = e.to_string();
+        } else if let Some(e) = opt_str(u, "email") {
+            username = e;
+        }
+    }
+    AccountUser {
+        id: str_field(u, &["id", "_id", "customUserId"]),
+        username,
+        email: opt_str(u, "email").or_else(|| email_fallback.map(|e| e.to_string())),
+        avatar_url: normalize_avatar_url(opt_str_keys(
+            u,
+            &[
+                "avatarUrl",
+                "avatar_url",
+                "image",
+                "avatar",
+                "profileImage",
+                "profile_image",
+                "picture",
+                "photoURL",
+                "photoUrl",
+            ],
+        )),
+    }
+}
+
+/// Make relative PMVHaven avatar paths loadable in the desktop WebView.
+fn normalize_avatar_url(raw: Option<String>) -> Option<String> {
+    let s = raw?.trim().to_string();
+    if s.is_empty() {
+        return None;
+    }
+    if s.starts_with("http://") || s.starts_with("https://") || s.starts_with("data:") {
+        Some(s)
+    } else if let Some(rest) = s.strip_prefix("//") {
+        Some(format!("https://{rest}"))
+    } else if s.starts_with('/') {
+        Some(format!("https://pmvhaven.com{s}"))
+    } else {
+        Some(format!("https://pmvhaven.com/{s}"))
+    }
 }
 
 fn arr_str(v: &Value, key: &str) -> Vec<String> {
@@ -782,7 +878,17 @@ fn normalize_summary(v: Value) -> VideoSummary {
         preview_url: opt_str(&v, "previewUrl"),
         views: num_field(&v, "views") as u64,
         duration: str_field(&v, &["duration"]),
-        duration_seconds: num_field(&v, "durationSeconds") as u32,
+        duration_seconds: {
+            let mut secs = num_field(&v, "durationSeconds") as u32;
+            if secs == 0 {
+                secs = num_field(&v, "duration_seconds") as u32;
+            }
+            if secs == 0 {
+                // Some payloads only ship a display string (`3:45`).
+                secs = parse_duration_secs(&str_field(&v, &["duration"]));
+            }
+            secs
+        },
         aspect_ratio: {
             let a = num_field(&v, "aspectRatio");
             if a == 0.0 { 1.7778 } else { a }

@@ -22,7 +22,14 @@ icon = [
   "assets/app-icon-256.png",
   "assets/app-icon-512.png",
   "assets/app-icon-1024.png",
+  "assets/app-icon.ico",
 ]
 category = "Entertainment"
 short_description = "Ad-free PMVHaven desktop client"
 long_description = "Native-ish Rust desktop client for PMVHaven with permanent local watch history."
+
+# Windows Start Menu / taskbar / explorer need a real .ico.
+# `dx serve` / `dx bundle` embed this via the CLI winres (do not also use
+# a Cargo build.rs winresource — that duplicates VERSION and fails link).
+[bundle.windows]
+icon_path = "assets/app-icon.ico"

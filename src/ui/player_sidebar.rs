@@ -3,6 +3,7 @@ use crate::services::player::{self, advance_queue, play_from_queue};
 use crate::services::queue;
 use crate::services::repo::{get_cached_summary, upsert_history};
 use crate::services::stream_proxy::proxied_url;
+use crate::ui::ctx::{PlayerFs, PlayerRailW, ProxyBase, QueueOpen, QueueTick, StartAt};
 use crate::ui::nav::Route;
 use dioxus::prelude::*;
 use std::collections::HashMap;
@@ -19,24 +20,43 @@ static LAST_POS_MS: AtomicU64 = AtomicU64::new(0);
 #[component]
 pub fn PlayerSidebar() -> Element {
     let now_playing = use_context::<Signal<Option<PlayableVideo>>>();
-    let mut start_at = use_context::<Signal<f64>>();
-    let proxy_base = use_context::<Signal<String>>();
-    let mut queue_tick = use_context::<Signal<u32>>();
-    let mut queue_open = use_context::<Signal<bool>>();
+    let start_at = use_context::<StartAt>().0;
+    let proxy_base = use_context::<ProxyBase>().0;
+    let mut queue_tick = use_context::<QueueTick>().0;
+    let mut queue_open = use_context::<QueueOpen>().0;
     let mut watched_map = use_context::<Signal<HashMap<String, f64>>>();
-    let player_fs = use_context::<Signal<bool>>();
-    let player_rail_w = use_context::<Signal<Option<u32>>>();
+    let player_fs = use_context::<PlayerFs>().0;
+    let player_rail_w = use_context::<PlayerRailW>().0;
     let navigator = use_navigator();
+    // Per-session quality preference (mirrors PMVHaven): auto | height | original
+    let mut player_quality = use_signal(|| "auto".to_string());
 
     let queue_items = use_memo(move || {
         let _ = queue_tick();
         queue::snapshot().items
     });
+    let queue_total = use_memo(move || queue::format_items_duration(&queue_items()));
+    let queue_count = use_memo(move || queue_items().len());
 
     let playing_id = use_memo(move || {
         now_playing()
             .map(|p| p.summary.id)
             .unwrap_or_default()
+    });
+
+    // Reset quality to Auto when the clip changes.
+    use_effect(move || {
+        let _id = playing_id();
+        player_quality.set("auto".into());
+        spawn(async move {
+            let _ = document::eval(
+                r#"
+                window.__pmvQuality = 'auto';
+                return 'ok';
+                "#,
+            )
+            .await;
+        });
     });
 
     // One long-lived JS↔Rust channel. No polling evals — those fight WebKit
@@ -78,27 +98,28 @@ pub fn PlayerSidebar() -> Element {
         }
     });
 
-    // Attach stream in JS only when the video *id* changes — same as v1 VideoStage.
-    // Never put `src` in RSX: Dioxus re-applying it on fullscreen re-renders
-    // restarts/stalls GStreamer decode (v1 avoided this by using a ref + attachStream).
+    // Attach stream when the video id changes.
+    // Match PMVHaven: HLS master when available, progressive Original as fallback.
+    // Quality changes go through window.__pmvApplyQuality (no full rebind).
     use_effect(move || {
         let id = playing_id();
         if id.is_empty() {
             return;
         }
         let resume = *start_at.peek();
-        let src = now_playing
+        let (file_src, hls_src) = now_playing
             .peek()
             .as_ref()
             .map(|p| {
-                if !p.video_url.is_empty() {
-                    p.video_url.clone()
-                } else {
-                    proxied_url(
-                        &proxy_base.peek(),
-                        p.hls_master_playlist_url.as_deref().unwrap_or(""),
-                    )
-                }
+                let file = p.video_url.clone();
+                let hls = p
+                    .hls_master_playlist_url
+                    .as_deref()
+                    .filter(|u| !u.is_empty())
+                    .map(|u| proxied_url(&proxy_base.peek(), u))
+                    .filter(|u| !u.is_empty())
+                    .unwrap_or_default();
+                (file, hls)
             })
             .unwrap_or_default();
         LAST_POS_MS.store((resume * 1000.0) as u64, Ordering::Relaxed);
@@ -116,7 +137,6 @@ pub fn PlayerSidebar() -> Element {
                   if (typeof window.__pmvSend === 'function') window.__pmvSend(msg);
                 }};
 
-                // Native WebKit video-fullscreen is black — bounce to our FS.
                 if (!window.__pmvBailFsBound) {{
                   window.__pmvBailFsBound = true;
                   const bailFs = () => {{
@@ -139,7 +159,6 @@ pub fn PlayerSidebar() -> Element {
                   window.addEventListener('keydown', window.__pmvFsEsc);
                 }}
 
-                // Double-click video to toggle our in-app fullscreen.
                 if (!el.dataset.dblFs) {{
                   el.dataset.dblFs = '1';
                   el.addEventListener('dblclick', (e) => {{
@@ -149,18 +168,138 @@ pub fn PlayerSidebar() -> Element {
                 }}
 
                 const resume = {resume};
-                const src = {src:?};
+                const fileSrc = {file_src:?};
+                const hlsSrc = {hls_src:?};
                 window.__pmvResumePending = resume > 1;
                 window.__pmvSeeking = false;
+                window.__pmvFileSrc = fileSrc;
+                window.__pmvHlsSrc = hlsSrc;
+                if (!window.__pmvQuality) window.__pmvQuality = 'auto';
                 let lastSend = 0;
 
-                // Only (re)assign src when the bound video changes — never on FS toggle.
-                if (src && el.dataset.boundSrc !== src) {{
-                  el.dataset.boundSrc = src;
-                  el.src = resume > 1
-                    ? (src + '#t=' + Math.floor(resume))
-                    : src;
+                const destroyHls = () => {{
+                  if (window.__hls) {{
+                    try {{ window.__hls.destroy(); }} catch (e) {{}}
+                    window.__hls = null;
+                  }}
+                }};
+
+                const heightPref = (q) => {{
+                  if (!q || q === 'auto' || q === 'original') return -1;
+                  const n = parseInt(q, 10);
+                  return Number.isFinite(n) ? n : -1;
+                }};
+
+                const applyQuality = (hls, q) => {{
+                  if (!hls || !hls.levels || !hls.levels.length) return;
+                  const want = heightPref(q);
+                  if (want < 0) {{
+                    hls.capLevelToPlayerSize = true;
+                    hls.autoLevelCapping = -1;
+                    hls.currentLevel = -1;
+                    return;
+                  }}
+                  hls.capLevelToPlayerSize = false;
+                  let best = 0;
+                  let bestDist = Infinity;
+                  for (let i = 0; i < hls.levels.length; i++) {{
+                    const ht = hls.levels[i].height || 0;
+                    const dist = Math.abs(ht - want);
+                    if (dist < bestDist) {{ bestDist = dist; best = i; }}
+                  }}
+                  hls.currentLevel = best;
+                  hls.loadLevel = best;
+                }};
+
+                const playFile = () => {{
+                  destroyHls();
+                  if (!fileSrc) return 'no-file';
+                  el.dataset.boundSrc = 'file:' + fileSrc;
+                  el.src = resume > 1 ? (fileSrc + '#t=' + Math.floor(resume)) : fileSrc;
+                  const p = el.play();
+                  if (p && p.catch) p.catch(() => {{}});
+                  return 'file';
+                }};
+
+                const playHls = () => {{
+                  if (!hlsSrc) return playFile();
+                  const start = () => {{
+                    if (!(window.Hls && window.Hls.isSupported())) {{
+                      return playFile();
+                    }}
+                    destroyHls();
+                    el.removeAttribute('src');
+                    try {{ el.load(); }} catch (e) {{}}
+                    el.dataset.boundSrc = 'hls:' + hlsSrc;
+                    const q = window.__pmvQuality || 'auto';
+                    const hls = new window.Hls({{
+                      enableWorker: true,
+                      lowLatencyMode: false,
+                      backBufferLength: 30,
+                      maxBufferLength: 45,
+                      maxMaxBufferLength: 60,
+                      capLevelToPlayerSize: heightPref(q) < 0,
+                      startLevel: -1,
+                    }});
+                    let fellBack = false;
+                    const fallback = () => {{
+                      if (fellBack) return;
+                      fellBack = true;
+                      destroyHls();
+                      playFile();
+                    }};
+                    hls.loadSource(hlsSrc);
+                    hls.attachMedia(el);
+                    hls.on(window.Hls.Events.MANIFEST_PARSED, () => {{
+                      applyQuality(hls, window.__pmvQuality || 'auto');
+                      if (resume > 1) {{
+                        try {{ el.currentTime = resume; }} catch (e) {{}}
+                      }}
+                      const p = el.play();
+                      if (p && p.catch) p.catch(() => {{}});
+                    }});
+                    hls.on(window.Hls.Events.ERROR, (_e, data) => {{
+                      if (data && data.fatal) fallback();
+                    }});
+                    setTimeout(() => {{
+                      if (!fellBack && el.readyState < 2 && (!el.duration || isNaN(el.duration))) {{
+                        fallback();
+                      }}
+                    }}, 8000);
+                    window.__hls = hls;
+                    return 'hls';
+                  }};
+                  if (window.Hls) return start();
+                  let n = 0;
+                  const t = setInterval(() => {{
+                    n += 1;
+                    if (window.Hls || n > 40) {{
+                      clearInterval(t);
+                      start();
+                    }}
+                  }}, 50);
+                  return 'hls-wait';
+                }};
+
+                window.__pmvApplyQuality = (q) => {{
+                  window.__pmvQuality = q || 'auto';
+                  if (q === 'original') return playFile();
+                  if (window.__hls && window.__hls.levels && window.__hls.levels.length) {{
+                    applyQuality(window.__hls, q);
+                    return 'level';
+                  }}
+                  return playHls();
+                }};
+
+                const preferFile = (window.__pmvQuality === 'original') || !hlsSrc;
+                const bindKey = (preferFile ? 'file:' : 'hls:') + (preferFile ? fileSrc : hlsSrc);
+                if (el.dataset.boundSrc === bindKey) {{
+                  if (window.__hls) applyQuality(window.__hls, window.__pmvQuality || 'auto');
+                  return 'same';
                 }}
+
+                if (preferFile) playFile();
+                else playHls();
 
                 const snap = () => {{
                   if (!el.duration || el.duration < 1) return null;
@@ -207,9 +346,59 @@ pub fn PlayerSidebar() -> Element {
                 if (el.readyState >= 1) applyResume();
                 else el.addEventListener('loadedmetadata', applyResume, {{ once: true }});
 
-                const p = el.play();
-                if (p && p.catch) p.catch(() => {{}});
                 return 'ok';
+                "#
+            ))
+            .await;
+        });
+    });
+
+    // Fullscreen chrome: show on mouse move, hide after 60s idle.
+    use_effect(move || {
+        let fs = player_fs();
+        spawn(async move {
+            let _ = document::eval(&format!(
+                r#"
+                window.__pmvFs = {fs};
+                if (typeof window.__pmvFsIdleCleanup === 'function') {{
+                  try {{ window.__pmvFsIdleCleanup(); }} catch (e) {{}}
+                  window.__pmvFsIdleCleanup = null;
+                }}
+                document.querySelectorAll('.player-sidebar').forEach((el) => {{
+                  el.classList.remove('fs-ui-visible');
+                }});
+                if (!{fs}) return 'fs-off';
+
+                // Match typical video-control auto-hide (not a long idle).
+                const IDLE_MS = 3500;
+                let timer = null;
+                const sidebar = () => document.querySelector('.player-sidebar.fullscreen');
+                const show = () => {{
+                  const el = sidebar();
+                  if (!el) return;
+                  el.classList.add('fs-ui-visible');
+                  if (timer) clearTimeout(timer);
+                  timer = setTimeout(() => {{
+                    const cur = sidebar();
+                    if (cur) cur.classList.remove('fs-ui-visible');
+                  }}, IDLE_MS);
+                }};
+                const onMove = () => {{
+                  if (window.__pmvFs) show();
+                }};
+                // Wait a frame so the .fullscreen class is on the DOM.
+                requestAnimationFrame(() => {{
+                  requestAnimationFrame(show);
+                }});
+                window.addEventListener('mousemove', onMove, true);
+                window.addEventListener('pointermove', onMove, true);
+                window.__pmvFsIdleCleanup = () => {{
+                  window.removeEventListener('mousemove', onMove, true);
+                  window.removeEventListener('pointermove', onMove, true);
+                  if (timer) clearTimeout(timer);
+                  timer = null;
+                }};
+                return 'fs-idle-on';
                 "#
             ))
             .await;
@@ -222,6 +411,8 @@ pub fn PlayerSidebar() -> Element {
     }
 
     let fs = player_fs();
+    let queue_count = queue_count();
+    let queue_total = queue_total();
 
     rsx! {
         aside { class: if fs { "player-sidebar fullscreen" } else { "player-sidebar" },
@@ -242,19 +433,21 @@ pub fn PlayerSidebar() -> Element {
                     let id = playable.summary.id.clone();
                     let title = playable.summary.title.clone();
                     let thumb = playable.summary.thumbnail_url.clone();
-                    let has_url = !playable.video_url.is_empty()
-                        || playable
-                            .hls_master_playlist_url
-                            .as_ref()
-                            .is_some_and(|u| !u.is_empty());
+                    let has_file = !playable.video_url.is_empty();
+                    let has_hls = playable
+                        .hls_master_playlist_url
+                        .as_ref()
+                        .is_some_and(|u| !u.is_empty());
+                    let has_url = has_file || has_hls;
+                    let mut variants = playable.hls_variants.clone();
+                    variants.sort_by(|a, b| b.height.cmp(&a.height));
+                    let q_cur = player_quality();
 
                     rsx! {
                         div { class: "player-stage",
                             if !has_url {
                                 div { class: "player-error", "No stream URL for this video." }
                             } else {
-                                // No `src` / no title attr — src is JS-bound; title would
-                                // show a browser tooltip over the player (v1 avoided this).
                                 video {
                                     key: "{id}",
                                     id: "pmv-player",
@@ -278,6 +471,52 @@ pub fn PlayerSidebar() -> Element {
                         }
                         div { class: if fs { "player-meta player-fs-bar" } else { "player-meta" },
                             div { class: "player-title", "{title}" }
+                            if has_hls || has_file {
+                                select {
+                                    class: "player-quality",
+                                    title: "Stream quality",
+                                    value: "{q_cur}",
+                                    onchange: move |e| {
+                                        let q = e.value();
+                                        player_quality.set(q.clone());
+                                        spawn(async move {
+                                            let _ = document::eval(&format!(
+                                                r#"
+                                                if (typeof window.__pmvApplyQuality === 'function') {{
+                                                  window.__pmvApplyQuality({q:?});
+                                                }} else {{
+                                                  window.__pmvQuality = {q:?};
+                                                }}
+                                                return 'ok';
+                                                "#
+                                            ))
+                                            .await;
+                                        });
+                                    },
+                                    option { value: "auto", selected: q_cur == "auto", "Auto" }
+                                    for v in variants {
+                                        {
+                                            let val = v.height.to_string();
+                                            let label = if v.resolution.is_empty() {
+                                                format!("{}p", v.height)
+                                            } else {
+                                                v.resolution.clone()
+                                            };
+                                            let selected = q_cur == val;
+                                            rsx! {
+                                                option { value: "{val}", selected: selected, "{label}" }
+                                            }
+                                        }
+                                    }
+                                    if has_file {
+                                        option {
+                                            value: "original",
+                                            selected: q_cur == "original",
+                                            "Original"
+                                        }
+                                    }
+                                }
+                            }
                             if fs {
                                 button {
                                     class: "icon-btn",
@@ -302,18 +541,6 @@ pub fn PlayerSidebar() -> Element {
                                 },
                                 "↗"
                             }
-                            button {
-                                class: "icon-btn",
-                                title: "Close player",
-                                onclick: move |_| {
-                                    flush_position(now_playing, start_at);
-                                    if player_fs() {
-                                        set_fullscreen_mode(false, player_fs);
-                                    }
-                                    player::stop(now_playing, start_at);
-                                },
-                                "✕"
-                            }
                         }
                     }
                 }
@@ -333,7 +560,14 @@ pub fn PlayerSidebar() -> Element {
             div {
                 class: if fs { "sidebar-queue is-hidden" } else { "sidebar-queue" },
                 div { class: "sidebar-queue-header",
-                    span { "Up next ({queue_items().len()})" }
+                    div { class: "sidebar-queue-heading",
+                        span { "Up next ({queue_count})" }
+                        if queue_count > 0 {
+                            span { class: "queue-total-time", title: "Total length of queued videos",
+                                "{queue_total}"
+                            }
+                        }
+                    }
                     if !queue_items().is_empty() {
                         button {
                             class: "icon-btn",
@@ -653,32 +887,10 @@ fn start_drag_js(from: usize) -> String {
     )
 }
 
-fn flush_position(
-    now_playing: Signal<Option<PlayableVideo>>,
-    mut start_at: Signal<f64>,
-) {
-    if let Some(playable) = now_playing.peek().clone() {
-        let t = (LAST_POS_MS.load(Ordering::Relaxed) as f64) / 1000.0;
-        let t = if t >= 1.0 { t } else { *start_at.peek() };
-        if t >= 1.0 {
-            start_at.set(t);
-            player::save_now_playing(&playable, t);
-        }
-    }
-}
-
 fn set_fullscreen_mode(on: bool, mut player_fs: Signal<bool>) {
     player_fs.set(on);
     // v1: in-flow fill + Tauri setFullscreen. Same here via wry/tao.
     // Native <video> fullscreen stays blocked (black on WebKitGTK).
     dioxus::desktop::window().set_fullscreen(on);
-    spawn(async move {
-        let _ = document::eval(&format!(
-            r#"
-            window.__pmvFs = {on};
-            return 'ok';
-            "#
-        ))
-        .await;
-    });
+    // Idle-hide chrome is wired in PlayerSidebar's player_fs effect.
 }

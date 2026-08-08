@@ -281,9 +281,14 @@ input:focus, select:focus {
   font-size: 0.8rem;
   font-weight: 600;
   white-space: nowrap;
+  cursor: pointer;
 }
 .nav-queue-btn:hover {
   background: var(--surface-2);
+}
+.nav-queue-btn.on {
+  border-color: rgba(249, 115, 22, 0.45);
+  color: var(--accent-2);
 }
 .nav-queue-badge {
   min-width: 1.25rem;
@@ -301,12 +306,45 @@ input:focus, select:focus {
   font-size: 0.8rem;
   color: var(--muted);
 }
+.nav-user-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+  max-width: 160px;
+  padding: 0.15rem 0.25rem 0.15rem 0.15rem;
+  border-radius: 999px;
+  color: var(--text);
+  text-decoration: none;
+}
+.nav-user-link:hover {
+  background: var(--surface);
+}
+.nav-avatar {
+  width: 1.65rem;
+  height: 1.65rem;
+  border-radius: 999px;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+.nav-avatar-fallback {
+  display: inline-grid;
+  place-items: center;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--accent-2);
+  background: rgba(249, 115, 22, 0.18);
+}
 .nav-user-name {
   max-width: 110px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  padding: 0.25rem 0.35rem;
+  padding: 0;
+  font-size: 0.8rem;
+  font-weight: 550;
 }
 .nav-signin {
   padding: 0.35rem 0.65rem !important;
@@ -362,12 +400,16 @@ input:focus, select:focus {
     display: none;
   }
   .player-stage {
-    flex: 1 1 auto;
-    min-height: 160px;
-    max-height: 32vh;
+    flex: 0 0 auto;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    min-height: 140px;
+    max-height: 36vh;
   }
   .sidebar-queue {
     max-height: none;
+    flex: 1 1 auto;
+    min-height: 120px;
   }
 }
 
@@ -459,10 +501,10 @@ input:focus, select:focus {
 .chip-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.45rem;
+  gap: 0.55rem 0.6rem;
   margin-bottom: 0.25rem;
   /* Room for chip hover glow without clipping against section edges. */
-  padding: 2px 1px 4px;
+  padding: 2px 1px 6px;
   overflow: visible;
 }
 .tags-section {
@@ -472,26 +514,33 @@ input:focus, select:focus {
   max-height: none;
   overflow: visible;
 }
-/* Popular tags / category pills — high-contrast, clickable, site-adjacent */
+/* Popular tags — readable pills, no scrunched label+count */
 .chip {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
-  padding: 0.42rem 0.85rem;
+  gap: 0.55rem;
+  max-width: 100%;
+  padding: 0.5rem 0.95rem;
   border-radius: 999px;
   background: linear-gradient(180deg, #1e2129 0%, #16181f 100%);
   border: 1px solid rgba(255, 255, 255, 0.1);
   color: #e5e7eb;
-  font-size: 0.82rem;
+  font-size: 0.88rem;
   font-weight: 550;
   letter-spacing: 0.01em;
-  line-height: 1.2;
+  line-height: 1.25;
   text-decoration: none;
+  white-space: nowrap;
   transition:
     color 0.14s ease,
     border-color 0.14s ease,
     background 0.14s ease,
     box-shadow 0.14s ease;
+}
+.chip .chip-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .chip:hover,
 .chip:focus-visible,
@@ -507,12 +556,15 @@ input:focus, select:focus {
   background: linear-gradient(180deg, rgba(249, 115, 22, 0.34) 0%, rgba(249, 115, 22, 0.16) 100%);
 }
 .chip-count {
-  font-size: 0.7rem;
+  flex-shrink: 0;
+  font-size: 0.72rem;
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
   color: var(--muted);
-  padding: 0.1rem 0.4rem;
+  padding: 0.15rem 0.45rem;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.06);
+  line-height: 1.2;
 }
 .chip:hover .chip-count,
 .chip.active .chip-count {
@@ -802,9 +854,12 @@ body.is-resizing-rail * {
   position: relative;
   background: #000;
   border-bottom: 1px solid var(--border);
-  /* Prefer video growth when the window/rail grows; queue keeps a floor. */
-  flex: 3 1 0;
-  min-height: 200px;
+  /* Fixed widescreen frame — queue below absorbs sidebar height changes. */
+  flex: 0 0 auto;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  max-height: min(52vh, calc(100% - 160px));
+  min-height: 160px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -830,8 +885,12 @@ body.is-resizing-rail * {
   background: #000;
 }
 .player-sidebar.fullscreen .player-stage {
-  flex: 1;
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+  max-height: none;
   min-height: 0;
+  aspect-ratio: auto;
   border-bottom: none;
   display: flex;
   align-items: center;
@@ -897,7 +956,8 @@ video::-webkit-media-controls-fullscreen-button {
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
-/* Fullscreen: minimal auto-hiding title bar over the video. */
+/* Fullscreen: minimal auto-hiding title bar over the video.
+   Revealed on mouse move; hidden after 60s idle (see PlayerSidebar JS). */
 .player-sidebar.fullscreen .player-meta.player-fs-bar {
   display: flex !important;
   position: absolute;
@@ -911,9 +971,9 @@ video::-webkit-media-controls-fullscreen-button {
   background: linear-gradient(to bottom, rgba(0, 0, 0, 0.78), rgba(0, 0, 0, 0.35) 70%, transparent);
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.2s ease;
+  transition: opacity 0.25s ease;
 }
-.player-sidebar.fullscreen:hover .player-meta.player-fs-bar,
+.player-sidebar.fullscreen.fs-ui-visible .player-meta.player-fs-bar,
 .player-sidebar.fullscreen .player-meta.player-fs-bar:focus-within {
   opacity: 1;
   pointer-events: auto;
@@ -942,10 +1002,27 @@ video::-webkit-media-controls-fullscreen-button {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.player-quality {
+  flex-shrink: 0;
+  max-width: 7.5rem;
+  padding: 0.28rem 0.45rem;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.player-sidebar.fullscreen .player-fs-bar .player-quality {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.18);
+  color: #fff;
+}
 .sidebar-queue {
+  /* Fills leftover rail height under the fixed 16:9 stage. */
   flex: 1 1 0;
-  min-height: 140px;
-  max-height: 46%;
+  min-height: 0;
+  max-height: none;
   display: flex;
   flex-direction: column;
 }
@@ -956,17 +1033,67 @@ video::-webkit-media-controls-fullscreen-button {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 0.5rem;
   padding: 0.65rem 0.75rem;
   font-size: 0.8rem;
   font-weight: 600;
   color: var(--muted);
   border-bottom: 1px solid var(--border);
 }
+.sidebar-queue-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 0.55rem;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.queue-total-time {
+  font-weight: 550;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  opacity: 0.72;
+}
 .queue-hint {
   margin: 0;
   padding: 0.35rem 0.75rem 0.15rem;
   font-size: 0.68rem;
   color: var(--muted);
+}
+.sidebar-queue.queue-flash {
+  animation: queue-flash 0.85s ease;
+}
+@keyframes queue-flash {
+  0%, 100% { box-shadow: none; }
+  35% { box-shadow: inset 0 0 0 1px rgba(249, 115, 22, 0.55); }
+}
+.settings-profile {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  margin-bottom: 0.85rem;
+}
+.settings-avatar {
+  width: 3.25rem;
+  height: 3.25rem;
+  border-radius: 999px;
+  object-fit: cover;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+.settings-avatar-fallback {
+  display: inline-grid;
+  place-items: center;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--accent-2);
+  background: rgba(249, 115, 22, 0.18);
+}
+.settings-profile-meta p {
+  margin: 0;
+}
+.settings-profile-meta .muted {
+  margin-top: 0.2rem;
 }
 .sidebar-queue-list {
   flex: 1;

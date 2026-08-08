@@ -54,9 +54,11 @@ pub fn restore_into(
 
 /// Apply a fully-fetched detail into the persistent player. Same id = no-op (keeps progress).
 /// `start_at` is seconds.
+/// Removes the video from the up-next queue if present so the count stays accurate.
 pub fn play_detail(
     mut now_playing: Signal<Option<PlayableVideo>>,
     mut start_at: Signal<f64>,
+    mut queue_tick: Signal<u32>,
     detail: &VideoDetail,
 ) {
     let id = detail.summary.id.as_str();
@@ -66,6 +68,11 @@ pub fn play_detail(
         .is_some_and(|p| p.summary.id == id)
     {
         return;
+    }
+    // Playing a queued item any other way (Watch page, "Play now") must dequeue it.
+    if queue::is_queued(id) {
+        queue::remove(id);
+        queue_tick.set(queue_tick() + 1);
     }
     cache_video(&detail.summary);
     let resume_secs = if detail.watch_progress > 0.01 && detail.watch_progress < 0.95 {
@@ -92,10 +99,11 @@ pub async fn play_id(
     id: &str,
     now_playing: Signal<Option<PlayableVideo>>,
     start_at: Signal<f64>,
+    queue_tick: Signal<u32>,
 ) -> bool {
     match shared_client().get_video(id).await {
         Ok(detail) => {
-            play_detail(now_playing, start_at, &detail);
+            play_detail(now_playing, start_at, queue_tick, &detail);
             let client = shared_client();
             let vid = id.to_string();
             spawn(async move {
@@ -148,7 +156,7 @@ pub async fn advance_queue(
         return;
     };
     queue_tick.set(queue_tick() + 1);
-    let _ = play_id(&next.id, now_playing, start_at).await;
+    let _ = play_id(&next.id, now_playing, start_at, queue_tick).await;
 }
 
 /// Play a queued item: stop current, play clicked, remove only that item from the queue.
@@ -161,7 +169,7 @@ pub async fn play_from_queue(
     // Slice this video out of the queue; leave every other entry alone.
     let _ = queue::take(id);
     queue_tick.set(queue_tick() + 1);
-    let _ = play_id(id, now_playing, start_at).await;
+    let _ = play_id(id, now_playing, start_at, queue_tick).await;
 }
 
 /// Card / list open intent: idle → play; same → noop; busy → caller shows choice.

@@ -1,7 +1,7 @@
 name: Release
 
 # Builds Linux AppImage + Windows NSIS installer, then creates a GitHub Release
-# tagged from Cargo.toml's version (e.g. 2.1.2 → v2.1.2).
+# tagged from Cargo.toml's version (e.g. 2.2.0 → v2.2.0).
 #
 # Skips when that tag/release already exists so docs-only pushes to main are cheap.
 # Bump `[package].version` in Cargo.toml to cut a new release.

@@ -3,6 +3,7 @@ use crate::services::player;
 use crate::services::pmv::shared_client;
 use crate::services::queue;
 use crate::services::repo::{Bucket, set_local_bucket};
+use crate::ui::ctx::{QueueTick, StartAt};
 use crate::ui::nav::browse_link;
 use crate::ui::pages::components::{format_views, VideoGrid};
 use dioxus::prelude::*;
@@ -15,8 +16,8 @@ pub fn Watch(id: String) -> Element {
     let mut loading = use_signal(|| true);
     let mut err = use_signal(|| None::<String>);
     let now_playing = use_context::<Signal<Option<PlayableVideo>>>();
-    let start_at = use_context::<Signal<f64>>();
-    let mut queue_tick = use_context::<Signal<u32>>();
+    let start_at = use_context::<StartAt>().0;
+    let mut queue_tick = use_context::<QueueTick>().0;
     let id_c = id.clone();
 
     use_future(move || {
@@ -28,7 +29,7 @@ pub fn Watch(id: String) -> Element {
             match client.get_video(&id).await {
                 Ok(d) => {
                     // Kick the rail immediately — don't wait on related.
-                    player::play_detail(now_playing, start_at, &d);
+                    player::play_detail(now_playing, start_at, queue_tick, &d);
                     let client2 = client.clone();
                     let vid = id.clone();
                     spawn(async move {

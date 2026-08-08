@@ -2,6 +2,7 @@ use crate::models::{AccountUser, PlayableVideo, VideoSummary};
 use crate::services::player::{self, OpenIntent};
 use crate::services::queue;
 use crate::services::repo::watched_progress_map;
+use crate::ui::ctx::{HoverPreviewVolume, HoverPreviews, PausePreviewsWhilePlaying, QueueTick};
 use crate::ui::nav::{browse_link, Route};
 use dioxus::prelude::*;
 use std::collections::HashMap;
@@ -25,12 +26,14 @@ fn rating_class(rating: f64) -> &'static str {
 
 #[component]
 pub fn VideoCard(video: VideoSummary) -> Element {
-    let mut queue_tick = use_context::<Signal<u32>>();
+    let mut queue_tick = use_context::<QueueTick>().0;
     let watched_map = use_context::<Signal<HashMap<String, f64>>>();
     let user = use_context::<Signal<Option<AccountUser>>>();
     let now_playing = use_context::<Signal<Option<PlayableVideo>>>();
     let mut play_choice = use_context::<Signal<Option<VideoSummary>>>();
-    let hover_previews = use_context::<Signal<bool>>();
+    let hover_previews = use_context::<HoverPreviews>().0;
+    let pause_previews_while_playing = use_context::<PausePreviewsWhilePlaying>().0;
+    let hover_preview_volume = use_context::<HoverPreviewVolume>().0;
     let navigator = use_navigator();
     let mut hovering = use_signal(|| false);
     let id = video.id.clone();
@@ -45,7 +48,12 @@ pub fn VideoCard(video: VideoSummary) -> Element {
     let signed_in = user().is_some();
     let is_watched = signed_in && progress.is_some();
     let rating = video.rating;
-    let allow_preview = hover_previews() && has_preview;
+    let playing = now_playing().is_some();
+    let allow_preview = hover_previews()
+        && has_preview
+        && !(pause_previews_while_playing() && playing);
+    let preview_vol = hover_preview_volume().clamp(0.0, 1.0);
+    let preview_muted = preview_vol <= 0.001;
 
     let open_from_thumb = {
         let video = video.clone();
@@ -104,11 +112,33 @@ pub fn VideoCard(video: VideoSummary) -> Element {
                                 id: "{video_el_id}",
                                 class: "preview-video show",
                                 src: "{src}",
-                                muted: true,
+                                muted: preview_muted,
                                 autoplay: true,
                                 r#loop: true,
                                 playsinline: true,
                                 preload: "metadata",
+                                onmounted: {
+                                    let el_id = video_el_id.clone();
+                                    move |_| {
+                                        let el_id = el_id.clone();
+                                        let vol = preview_vol;
+                                        let muted = preview_muted;
+                                        spawn(async move {
+                                            let _ = document::eval(&format!(
+                                                r#"
+                                                const el = document.getElementById({el_id:?});
+                                                if (!el) return 'no-el';
+                                                try {{
+                                                  el.muted = {muted};
+                                                  el.volume = {vol};
+                                                }} catch (e) {{}}
+                                                return 'ok';
+                                                "#
+                                            ))
+                                            .await;
+                                        });
+                                    }
+                                },
                             }
                         }
                     }
@@ -199,6 +229,17 @@ pub fn format_views(n: u64) -> String {
         format!("{:.1}K views", n as f64 / 1_000.0)
     } else {
         format!("{n} views")
+    }
+}
+
+/// Compact count for chips / badges (no unit suffix).
+pub fn format_compact(n: u64) -> String {
+    if n >= 1_000_000 {
+        format!("{:.1}M", n as f64 / 1_000_000.0)
+    } else if n >= 1_000 {
+        format!("{:.1}K", n as f64 / 1_000.0)
+    } else {
+        format!("{n}")
     }
 }
 

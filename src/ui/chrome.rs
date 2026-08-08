@@ -1,5 +1,6 @@
 use crate::models::PlayableVideo;
 use crate::services::player;
+use crate::ui::ctx::StartAt;
 use dioxus::prelude::*;
 
 pub const LOGO: Asset = asset!("/assets/logo.png");
@@ -11,7 +12,7 @@ pub const HLS_JS: Asset = asset!("/assets/hls.min.js");
 pub fn WindowChrome() -> Element {
     // Optional: flush now-playing position before quit.
     let now_playing = try_use_context::<Signal<Option<PlayableVideo>>>();
-    let start_at = try_use_context::<Signal<f64>>();
+    let start_at = try_use_context::<StartAt>().map(|s| s.0);
 
     rsx! {
         header { class: "titlebar",

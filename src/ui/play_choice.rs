@@ -1,6 +1,7 @@
 use crate::models::{PlayableVideo, VideoSummary};
 use crate::services::player;
 use crate::services::queue;
+use crate::ui::ctx::{QueueTick, StartAt};
 use dioxus::prelude::*;
 
 /// Modal when the user opens a video while another is already playing.
@@ -8,8 +9,8 @@ use dioxus::prelude::*;
 pub fn PlayChoiceModal() -> Element {
     let mut pending = use_context::<Signal<Option<VideoSummary>>>();
     let now_playing = use_context::<Signal<Option<PlayableVideo>>>();
-    let start_at = use_context::<Signal<f64>>();
-    let mut queue_tick = use_context::<Signal<u32>>();
+    let start_at = use_context::<StartAt>().0;
+    let mut queue_tick = use_context::<QueueTick>().0;
     let navigator = use_navigator();
 
     let Some(video) = pending() else {
@@ -36,7 +37,7 @@ pub fn PlayChoiceModal() -> Element {
                                 pending.set(None);
                                 let id = v.id.clone();
                                 spawn(async move {
-                                    let _ = player::play_id(&id, now_playing, start_at).await;
+                                    let _ = player::play_id(&id, now_playing, start_at, queue_tick).await;
                                 });
                                 navigator.push(crate::ui::nav::Route::Watch { id: v.id.clone() });
                             }

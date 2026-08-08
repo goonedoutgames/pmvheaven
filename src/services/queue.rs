@@ -98,3 +98,39 @@ pub fn is_queued(id: &str) -> bool {
 pub fn len() -> usize {
     QUEUE.lock().unwrap().items.len()
 }
+
+/// Sum of effective durations for every queued item.
+pub fn total_duration_seconds() -> u32 {
+    QUEUE
+        .lock()
+        .unwrap()
+        .items
+        .iter()
+        .map(crate::services::pmv::effective_duration_secs)
+        .sum()
+}
+
+/// Human-readable total queue length (`m:ss` or `h:mm:ss`).
+pub fn format_total_duration() -> String {
+    format_secs(total_duration_seconds())
+}
+
+pub fn format_secs(secs: u32) -> String {
+    let h = secs / 3600;
+    let m = (secs % 3600) / 60;
+    let s = secs % 60;
+    if h > 0 {
+        format!("{h}:{m:02}:{s:02}")
+    } else {
+        format!("{m}:{s:02}")
+    }
+}
+
+/// Total duration from an already-loaded item list (keeps UI in sync with the list).
+pub fn format_items_duration(items: &[VideoSummary]) -> String {
+    let secs = items
+        .iter()
+        .map(crate::services::pmv::effective_duration_secs)
+        .sum();
+    format_secs(secs)
+}

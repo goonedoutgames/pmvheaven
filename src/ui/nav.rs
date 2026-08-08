@@ -1,6 +1,6 @@
 use crate::models::{AccountUser, PlayableVideo};
-use crate::services::queue;
 use crate::ui::chrome::LOGO;
+use crate::ui::ctx::{PlayerFs, QueueOpen, QueueTick};
 use crate::ui::play_choice::PlayChoiceModal;
 use crate::ui::player_sidebar::PlayerSidebar;
 use dioxus::prelude::*;
@@ -58,17 +58,17 @@ pub fn browse_link(
 #[component]
 fn AppLayout() -> Element {
     let user = use_context::<Signal<Option<AccountUser>>>();
-    let mut queue_open = use_context::<Signal<bool>>();
-    let queue_tick = use_context::<Signal<u32>>();
+    let mut queue_open = use_context::<QueueOpen>().0;
+    let queue_tick = use_context::<QueueTick>().0;
     let now_playing = use_context::<Signal<Option<PlayableVideo>>>();
-    let player_fs = use_context::<Signal<bool>>();
+    let player_fs = use_context::<PlayerFs>().0;
     let mut search_q = use_signal(|| String::new());
     let mut menu_open = use_signal(|| false);
     let navigator = use_navigator();
 
     let queue_len = use_memo(move || {
         let _ = queue_tick();
-        queue::len()
+        crate::services::queue::len()
     });
 
     let show_sidebar = now_playing().is_some() || queue_len() > 0 || queue_open();
@@ -199,23 +199,67 @@ fn AppLayout() -> Element {
 
                     div { class: "nav-right",
                         button {
-                            class: "nav-queue-btn",
+                            class: if show_sidebar { "nav-queue-btn on" } else { "nav-queue-btn" },
                             r#type: "button",
-                            title: "Queue",
+                            title: if show_sidebar { "Hide queue" } else { "Show queue" },
                             onclick: move |_| {
                                 menu_open.set(false);
-                                queue_open.set(true);
+                                let playing_or_queued =
+                                    now_playing().is_some() || queue_len() > 0;
+                                if playing_or_queued {
+                                    // Rail already open — bring the queue into view.
+                                    queue_open.set(true);
+                                    spawn(async move {
+                                        let _ = document::eval(
+                                            r#"
+                                            const q = document.querySelector('.sidebar-queue');
+                                            if (q) {
+                                              q.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                                              q.classList.add('queue-flash');
+                                              setTimeout(() => q.classList.remove('queue-flash'), 900);
+                                            }
+                                            return 'ok';
+                                            "#,
+                                        )
+                                        .await;
+                                    });
+                                } else {
+                                    // Empty rail: toggle the queue panel open/closed.
+                                    queue_open.set(!queue_open());
+                                }
                             },
                             span { class: "nav-queue-label", "Queue" }
                             span { class: "nav-queue-badge", "{queue_len()}" }
                         }
                         div { class: "nav-user",
                             if let Some(u) = user() {
-                                Link {
-                                    to: Route::Settings {},
-                                    class: "nav-user-name",
-                                    onclick: close_menu,
-                                    "{u.username}"
+                                {
+                                    let initial = u
+                                        .username
+                                        .chars()
+                                        .next()
+                                        .map(|c| c.to_uppercase().to_string())
+                                        .unwrap_or_else(|| "?".into());
+                                    let avatar = u.avatar_url.clone();
+                                    rsx! {
+                                        Link {
+                                            to: Route::Settings {},
+                                            class: "nav-user-link",
+                                            onclick: close_menu,
+                                            title: "{u.username}",
+                                            if let Some(url) = avatar {
+                                                img {
+                                                    class: "nav-avatar",
+                                                    src: "{url}",
+                                                    alt: "",
+                                                    referrerpolicy: "no-referrer",
+                                                }
+                                            } else {
+                                                span { class: "nav-avatar nav-avatar-fallback", "{initial}" }
+                                            }
+                                            span { class: "nav-user-name", "{u.username}" }
+                                        }
+                                    }
                                 }
                             } else {
                                 Link {

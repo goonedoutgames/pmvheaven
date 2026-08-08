@@ -1,7 +1,7 @@
 use crate::models::{FeedParams, PopularTag, VideoSort, VideoSummary};
 use crate::services::pmv::shared_client;
 use crate::ui::nav::browse_link;
-use crate::ui::pages::components::{format_views, VideoGrid};
+use crate::ui::pages::components::{format_compact, VideoGrid};
 use dioxus::prelude::*;
 
 #[component]
@@ -81,9 +81,9 @@ pub fn Home() -> Element {
                                     None,
                                 ),
                                 class: "chip",
-                                span { "{t.name}" }
+                                span { class: "chip-label", "{t.name}" }
                                 if t.usage_count > 0 {
-                                    span { class: "chip-count", "{format_views(t.usage_count)}" }
+                                    span { class: "chip-count", "{format_compact(t.usage_count)}" }
                                 }
                             }
                         }

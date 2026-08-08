@@ -75,6 +75,8 @@ pub struct PlayableVideo {
     pub video_url: String,
     pub hls_master_playlist_url: Option<String>,
     pub hls_enabled: bool,
+    #[serde(default)]
+    pub hls_variants: Vec<HlsVariant>,
     pub watch_progress: f64,
 }
 
@@ -85,6 +87,7 @@ impl From<&VideoDetail> for PlayableVideo {
             video_url: d.video_url.clone(),
             hls_master_playlist_url: d.hls_master_playlist_url.clone(),
             hls_enabled: d.hls_enabled,
+            hls_variants: d.hls_variants.clone(),
             watch_progress: d.watch_progress,
         }
     }
