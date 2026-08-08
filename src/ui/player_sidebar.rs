@@ -3,7 +3,9 @@ use crate::services::player::{self, advance_queue, play_from_queue};
 use crate::services::queue;
 use crate::services::repo::{get_cached_summary, upsert_history};
 use crate::services::stream_proxy::proxied_url;
-use crate::ui::ctx::{PlayerFs, PlayerRailW, ProxyBase, QueueOpen, QueueTick, StartAt};
+use crate::ui::ctx::{
+    PlayerFs, PlayerQueueH, PlayerRailW, ProxyBase, QueueOpen, QueueTick, StartAt,
+};
 use crate::ui::nav::Route;
 use dioxus::prelude::*;
 use std::collections::HashMap;
@@ -27,6 +29,7 @@ pub fn PlayerSidebar() -> Element {
     let mut watched_map = use_context::<Signal<HashMap<String, f64>>>();
     let player_fs = use_context::<PlayerFs>().0;
     let player_rail_w = use_context::<PlayerRailW>().0;
+    let player_queue_h = use_context::<PlayerQueueH>().0;
     let navigator = use_navigator();
     // Per-session quality preference (mirrors PMVHaven): auto | height | original
     let mut player_quality = use_signal(|| "auto".to_string());
@@ -84,6 +87,7 @@ pub fn PlayerSidebar() -> Element {
                             queue_tick,
                             player_fs,
                             player_rail_w,
+                            player_queue_h,
                             &mut watched_map,
                         )
                         .await;
@@ -485,102 +489,118 @@ pub fn PlayerSidebar() -> Element {
                     let stage_style = format!("--player-ar: {ar}");
 
                     rsx! {
-                        div { class: "{stage_class}", style: "{stage_style}",
-                            if !has_url {
-                                div { class: "player-error", "No stream URL for this video." }
-                            } else {
-                                video {
-                                    key: "{id}",
-                                    id: "pmv-player",
-                                    class: "player-video",
-                                    poster: "{thumb}",
-                                    controls: true,
-                                    playsinline: true,
-                                    preload: "auto",
+                        div { class: "player-upper",
+                            div { class: "player-stage-host",
+                                div { class: "{stage_class}", style: "{stage_style}",
+                                    if !has_url {
+                                        div { class: "player-error", "No stream URL for this video." }
+                                    } else {
+                                        video {
+                                            key: "{id}",
+                                            id: "pmv-player",
+                                            class: "player-video",
+                                            poster: "{thumb}",
+                                            controls: true,
+                                            playsinline: true,
+                                            preload: "auto",
+                                        }
+                                    }
+                                    if !fs {
+                                        button {
+                                            class: "player-fs-btn",
+                                            title: "Fullscreen (double-click video)",
+                                            onclick: move |_| {
+                                                set_fullscreen_mode(!player_fs(), player_fs);
+                                            },
+                                            "⤢"
+                                        }
+                                    }
                                 }
                             }
-                            if !fs {
-                                button {
-                                    class: "player-fs-btn",
-                                    title: "Fullscreen (double-click video)",
-                                    onclick: move |_| {
-                                        set_fullscreen_mode(!player_fs(), player_fs);
-                                    },
-                                    "⤢"
-                                }
-                            }
-                        }
-                        div { class: if fs { "player-meta player-fs-bar" } else { "player-meta" },
-                            div { class: "player-title", "{title}" }
-                            if has_hls || has_file {
-                                select {
-                                    class: "player-quality",
-                                    title: "Stream quality",
-                                    value: "{q_cur}",
-                                    onchange: move |e| {
-                                        let q = e.value();
-                                        player_quality.set(q.clone());
-                                        spawn(async move {
-                                            let _ = document::eval(&format!(
-                                                r#"
-                                                if (typeof window.__pmvApplyQuality === 'function') {{
-                                                  window.__pmvApplyQuality({q:?});
-                                                }} else {{
-                                                  window.__pmvQuality = {q:?};
-                                                }}
-                                                return 'ok';
-                                                "#
-                                            ))
-                                            .await;
-                                        });
-                                    },
-                                    option { value: "auto", selected: q_cur == "auto", "Auto" }
-                                    for v in variants {
-                                        {
-                                            let val = v.height.to_string();
-                                            let label = if v.resolution.is_empty() {
-                                                format!("{}p", v.height)
-                                            } else {
-                                                v.resolution.clone()
-                                            };
-                                            let selected = q_cur == val;
-                                            rsx! {
-                                                option { value: "{val}", selected: selected, "{label}" }
+                            div { class: if fs { "player-meta player-fs-bar" } else { "player-meta" },
+                                div { class: "player-title", "{title}" }
+                                if has_hls || has_file {
+                                    select {
+                                        class: "player-quality",
+                                        title: "Stream quality",
+                                        value: "{q_cur}",
+                                        onchange: move |e| {
+                                            let q = e.value();
+                                            player_quality.set(q.clone());
+                                            spawn(async move {
+                                                let _ = document::eval(&format!(
+                                                    r#"
+                                                    if (typeof window.__pmvApplyQuality === 'function') {{
+                                                      window.__pmvApplyQuality({q:?});
+                                                    }} else {{
+                                                      window.__pmvQuality = {q:?};
+                                                    }}
+                                                    return 'ok';
+                                                    "#
+                                                ))
+                                                .await;
+                                            });
+                                        },
+                                        option { value: "auto", selected: q_cur == "auto", "Auto" }
+                                        for v in variants {
+                                            {
+                                                let val = v.height.to_string();
+                                                let label = if v.resolution.is_empty() {
+                                                    format!("{}p", v.height)
+                                                } else {
+                                                    v.resolution.clone()
+                                                };
+                                                let selected = q_cur == val;
+                                                rsx! {
+                                                    option { value: "{val}", selected: selected, "{label}" }
+                                                }
+                                            }
+                                        }
+                                        if has_file {
+                                            option {
+                                                value: "original",
+                                                selected: q_cur == "original",
+                                                "Original"
                                             }
                                         }
                                     }
-                                    if has_file {
-                                        option {
-                                            value: "original",
-                                            selected: q_cur == "original",
-                                            "Original"
-                                        }
+                                }
+                                if fs {
+                                    button {
+                                        class: "icon-btn player-fs-details",
+                                        title: "Open details",
+                                        onclick: {
+                                            let id = id.clone();
+                                            move |_| {
+                                                if player_fs() {
+                                                    set_fullscreen_mode(false, player_fs);
+                                                }
+                                                navigator.push(Route::Watch { id: id.clone() });
+                                            }
+                                        },
+                                        "Details"
                                     }
-                                }
-                            }
-                            if fs {
-                                button {
-                                    class: "icon-btn",
-                                    title: "Exit fullscreen (Esc)",
-                                    onclick: move |_| {
-                                        set_fullscreen_mode(false, player_fs);
-                                    },
-                                    "⤡"
-                                }
-                            }
-                            button {
-                                class: "icon-btn",
-                                title: "Open details",
-                                onclick: {
-                                    let id = id.clone();
-                                    move |_| {
-                                        if player_fs() {
+                                    button {
+                                        class: "icon-btn player-fs-exit",
+                                        title: "Exit fullscreen (Esc)",
+                                        onclick: move |_| {
                                             set_fullscreen_mode(false, player_fs);
-                                        }
-                                        navigator.push(Route::Watch { id: id.clone() });
+                                        },
+                                        "Exit"
                                     }
-                                },
-                                "↗"
+                                } else {
+                                    button {
+                                        class: "icon-btn",
+                                        title: "Open details",
+                                        onclick: {
+                                            let id = id.clone();
+                                            move |_| {
+                                                navigator.push(Route::Watch { id: id.clone() });
+                                            }
+                                        },
+                                        "↗"
+                                    }
+                                }
                             }
                         }
                     }
@@ -598,6 +618,18 @@ pub fn PlayerSidebar() -> Element {
 
             // Keep queue mounted (hidden in FS) so toggling FS doesn't churn the DOM
             // around the <video> element.
+            if !fs {
+                div {
+                    class: "queue-resize",
+                    title: "Drag to resize queue",
+                    onpointerdown: move |evt| {
+                        evt.prevent_default();
+                        spawn(async move {
+                            let _ = document::eval(QUEUE_RESIZE_JS).await;
+                        });
+                    },
+                }
+            }
             div {
                 class: if fs { "sidebar-queue is-hidden" } else { "sidebar-queue" },
                 div { class: "sidebar-queue-header",
@@ -725,8 +757,32 @@ const RAIL_RESIZE_JS: &str = r#"
   const send = (msg) => {
     if (typeof window.__pmvSend === 'function') window.__pmvSend(msg);
   };
-  const minW = 320;
-  const maxW = () => Math.min(1000, Math.floor(window.innerWidth * 0.72));
+  const minW = 280;
+  const maxW = () => Math.max(minW + 40, Math.min(1400, Math.floor(window.innerWidth * 0.9)));
+  const ensureUi = () => {
+    let badge = document.getElementById('pmv-resize-badge');
+    if (!badge) {
+      badge = document.createElement('div');
+      badge.id = 'pmv-resize-badge';
+      badge.className = 'resize-badge';
+      document.body.appendChild(badge);
+    }
+    return badge;
+  };
+  const applyW = (w, clientX, clientY) => {
+    const px = w + 'px';
+    aside.style.width = px;
+    aside.style.maxWidth = px;
+    document.documentElement.style.setProperty('--player-rail-w', px);
+    const main = document.getElementById('main');
+    if (main) main.style.setProperty('--player-rail-w', px);
+    window.__pmvRailLastW = w;
+    const badge = ensureUi();
+    badge.textContent = w + 'px wide';
+    badge.style.display = 'block';
+    badge.style.left = Math.min(window.innerWidth - 90, Math.max(8, clientX + 14)) + 'px';
+    badge.style.top = Math.min(window.innerHeight - 36, Math.max(8, clientY - 12)) + 'px';
+  };
   const onMove = (e) => {
     if (!window.__pmvRailBaseW) {
       window.__pmvRailBaseW = aside.getBoundingClientRect().width;
@@ -735,16 +791,15 @@ const RAIL_RESIZE_JS: &str = r#"
     const w = Math.round(
       Math.min(maxW(), Math.max(minW, window.__pmvRailBaseW + (window.__pmvRailBaseX - e.clientX)))
     );
-    document.documentElement.style.setProperty('--player-rail-w', w + 'px');
-    const main = document.getElementById('main');
-    if (main) main.style.setProperty('--player-rail-w', w + 'px');
-    window.__pmvRailLastW = w;
+    applyW(w, e.clientX, e.clientY);
   };
   const onUp = () => {
     window.removeEventListener('pointermove', onMove);
     window.removeEventListener('pointerup', onUp);
     window.removeEventListener('pointercancel', onUp);
     document.body.classList.remove('is-resizing-rail');
+    const badge = document.getElementById('pmv-resize-badge');
+    if (badge) badge.style.display = 'none';
     const w = window.__pmvRailLastW;
     window.__pmvRailBaseW = null;
     window.__pmvRailBaseX = null;
@@ -760,6 +815,79 @@ const RAIL_RESIZE_JS: &str = r#"
 })()
 "#;
 
+const QUEUE_RESIZE_JS: &str = r#"
+(() => {
+  const aside = document.querySelector('.player-sidebar:not(.fullscreen)');
+  const queue = aside && aside.querySelector('.sidebar-queue');
+  if (!aside || !queue) return 'no-queue';
+  const send = (msg) => {
+    if (typeof window.__pmvSend === 'function') window.__pmvSend(msg);
+  };
+  const minH = 88;
+  const maxH = () => {
+    const asideH = aside.getBoundingClientRect().height;
+    // Leave room for a usable video pane + meta (~160px).
+    return Math.max(minH + 40, Math.floor(asideH - 160));
+  };
+  const ensureUi = () => {
+    let badge = document.getElementById('pmv-resize-badge');
+    if (!badge) {
+      badge = document.createElement('div');
+      badge.id = 'pmv-resize-badge';
+      badge.className = 'resize-badge';
+      document.body.appendChild(badge);
+    }
+    return badge;
+  };
+  const applyH = (h, clientX, clientY) => {
+    const px = h + 'px';
+    queue.style.flex = '0 0 ' + px;
+    queue.style.height = px;
+    queue.style.maxHeight = px;
+    document.documentElement.style.setProperty('--player-queue-h', px);
+    const main = document.getElementById('main');
+    if (main) main.style.setProperty('--player-queue-h', px);
+    if (aside) aside.style.setProperty('--player-queue-h', px);
+    window.__pmvQueueLastH = h;
+    const badge = ensureUi();
+    badge.textContent = h + 'px queue';
+    badge.style.display = 'block';
+    badge.style.left = Math.min(window.innerWidth - 100, Math.max(8, clientX + 14)) + 'px';
+    badge.style.top = Math.min(window.innerHeight - 36, Math.max(8, clientY - 12)) + 'px';
+  };
+  const onMove = (e) => {
+    if (!window.__pmvQueueBaseH) {
+      window.__pmvQueueBaseH = queue.getBoundingClientRect().height;
+      window.__pmvQueueBaseY = e.clientY;
+    }
+    // Drag handle down → taller queue; up → shorter queue.
+    const h = Math.round(
+      Math.min(maxH(), Math.max(minH, window.__pmvQueueBaseH + (e.clientY - window.__pmvQueueBaseY)))
+    );
+    applyH(h, e.clientX, e.clientY);
+  };
+  const onUp = () => {
+    window.removeEventListener('pointermove', onMove);
+    window.removeEventListener('pointerup', onUp);
+    window.removeEventListener('pointercancel', onUp);
+    document.body.classList.remove('is-resizing-queue');
+    const badge = document.getElementById('pmv-resize-badge');
+    if (badge) badge.style.display = 'none';
+    const h = window.__pmvQueueLastH;
+    window.__pmvQueueBaseH = null;
+    window.__pmvQueueBaseY = null;
+    if (h) send('queueh|' + h);
+  };
+  document.body.classList.add('is-resizing-queue');
+  window.__pmvQueueBaseH = null;
+  window.__pmvQueueBaseY = null;
+  window.addEventListener('pointermove', onMove);
+  window.addEventListener('pointerup', onUp);
+  window.addEventListener('pointercancel', onUp);
+  return 'ok';
+})()
+"#;
+
 async fn handle_player_msg(
     raw: &str,
     now_playing: Signal<Option<PlayableVideo>>,
@@ -767,6 +895,7 @@ async fn handle_player_msg(
     mut queue_tick: Signal<u32>,
     player_fs: Signal<bool>,
     mut player_rail_w: Signal<Option<u32>>,
+    mut player_queue_h: Signal<Option<u32>>,
     watched_map: &mut Signal<HashMap<String, f64>>,
 ) {
     if raw == "ended" {
@@ -780,9 +909,18 @@ async fn handle_player_msg(
     }
     if let Some(w) = raw.strip_prefix("rail|") {
         if let Ok(px) = w.parse::<u32>() {
-            if (320..=1000).contains(&px) {
+            if (280..=1400).contains(&px) {
                 player_rail_w.set(Some(px));
                 crate::app::save_player_rail_width(px);
+            }
+        }
+        return;
+    }
+    if let Some(h) = raw.strip_prefix("queueh|") {
+        if let Ok(px) = h.parse::<u32>() {
+            if (88..=1200).contains(&px) {
+                player_queue_h.set(Some(px));
+                crate::app::save_player_queue_height(px);
             }
         }
         return;

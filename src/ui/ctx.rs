@@ -30,3 +30,6 @@ pub struct ProxyBase(pub Signal<String>);
 
 #[derive(Clone, Copy)]
 pub struct PlayerRailW(pub Signal<Option<u32>>);
+
+#[derive(Clone, Copy)]
+pub struct PlayerQueueH(pub Signal<Option<u32>>);

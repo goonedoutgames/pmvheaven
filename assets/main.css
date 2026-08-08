@@ -396,24 +396,28 @@ input:focus, select:focus {
     border-left: none;
     border-top: 1px solid var(--border);
   }
-  .player-rail-resize {
+  .player-rail-resize,
+  .queue-resize {
     display: none;
   }
   .player-stage {
     flex: 0 0 auto;
-    --player-max-h: 36vh;
-    width: min(100%, calc(var(--player-max-h) * var(--player-ar, 1.777778)));
+    width: min(100%, calc(36vh * var(--player-ar, 1.777778)));
     max-width: 100%;
     aspect-ratio: var(--player-ar, 16 / 9);
-    max-height: var(--player-max-h);
+    max-height: 36vh;
     height: auto;
     min-height: 0;
     margin-inline: auto;
   }
-  .sidebar-queue {
-    max-height: none;
-    flex: 1 1 auto;
+  .player-upper {
     min-height: 120px;
+  }
+  .sidebar-queue {
+    flex: 1 1 auto;
+    min-height: 100px;
+    height: auto;
+    max-height: none;
   }
 }
 
@@ -795,13 +799,13 @@ input:focus, select:focus {
 .player-sidebar {
   /* Scales with window so maximize grows the video, not only browse.
      User drag overrides via --player-rail-w (px). */
-  width: var(--player-rail-w, clamp(340px, 42vw, 780px));
+  width: var(--player-rail-w, clamp(340px, 42vw, 900px));
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
   min-height: 0;
-  min-width: 320px;
-  max-width: min(72vw, 1000px);
+  min-width: 280px;
+  max-width: min(90vw, 1400px);
   position: relative;
   background: rgba(12, 14, 18, 0.96);
   border-left: 1px solid var(--border);
@@ -811,7 +815,7 @@ input:focus, select:focus {
   left: 0;
   top: 0;
   bottom: 0;
-  width: 6px;
+  width: 8px;
   z-index: 8;
   cursor: col-resize;
   touch-action: none;
@@ -819,18 +823,22 @@ input:focus, select:focus {
 .player-rail-resize::after {
   content: "";
   position: absolute;
-  left: 1px;
+  left: 2px;
   top: 50%;
   transform: translateY(-50%);
-  width: 2px;
-  height: 48px;
-  border-radius: 2px;
-  background: transparent;
-  transition: background 0.15s ease;
+  width: 3px;
+  height: 56px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.14);
+  transition: background 0.15s ease, height 0.15s ease, opacity 0.15s ease;
 }
 .player-rail-resize:hover::after,
 body.is-resizing-rail .player-rail-resize::after {
   background: var(--accent);
+  height: 100%;
+  top: 0;
+  transform: none;
+  border-radius: 0;
 }
 body.is-resizing-rail {
   cursor: col-resize !important;
@@ -838,6 +846,37 @@ body.is-resizing-rail {
 }
 body.is-resizing-rail * {
   cursor: col-resize !important;
+}
+body.is-resizing-rail .player-sidebar {
+  outline: 2px solid color-mix(in srgb, var(--accent) 70%, transparent);
+  outline-offset: -2px;
+}
+body.is-resizing-queue {
+  cursor: row-resize !important;
+  user-select: none !important;
+}
+body.is-resizing-queue * {
+  cursor: row-resize !important;
+}
+body.is-resizing-queue .sidebar-queue {
+  outline: 2px solid color-mix(in srgb, var(--accent) 70%, transparent);
+  outline-offset: -2px;
+}
+.resize-badge {
+  position: fixed;
+  z-index: 10000;
+  display: none;
+  padding: 0.28rem 0.55rem;
+  border-radius: 8px;
+  background: rgba(8, 10, 14, 0.92);
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+  pointer-events: none;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
 }
 .app-shell.player-fs .app-main {
   /* Hide, don't unmount — same as v1 AppShell, so the page tree stays put. */
@@ -854,24 +893,46 @@ body.is-resizing-rail * {
   max-height: none;
   position: relative;
 }
+.player-upper {
+  flex: 1 1 auto;
+  min-height: 140px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.player-stage-host {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  display: grid;
+  place-items: center;
+  background: #000;
+  container-type: size;
+  overflow: hidden;
+}
 .player-stage {
   position: relative;
   background: #000;
-  border-bottom: 1px solid var(--border);
-  /* Stage box == clip AR (shrink width if height-capped). Video never crops. */
+  /* Fit AR inside the host; never crop the video. */
   flex: 0 0 auto;
-  --player-max-h: min(52vh, calc(100% - 160px));
-  width: min(100%, calc(var(--player-max-h) * var(--player-ar, 1.777778)));
+  width: min(100%, calc(52vh * var(--player-ar, 1.777778)));
   max-width: 100%;
+  max-height: 100%;
   aspect-ratio: var(--player-ar, 16 / 9);
-  max-height: var(--player-max-h);
   height: auto;
   min-height: 0;
-  margin-inline: auto;
+  margin: 0 auto;
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
+  border-bottom: none;
+}
+@supports (width: 1cqw) {
+  .player-stage {
+    width: min(100cqw, calc(100cqh * var(--player-ar, 1.777778)));
+  }
 }
 .player-stage video,
 .player-video {
@@ -894,19 +955,25 @@ body.is-resizing-rail * {
 .player-sidebar.fullscreen {
   background: #000;
 }
-.player-sidebar.fullscreen .player-stage {
+.player-sidebar.fullscreen .player-upper {
   flex: 1 1 auto;
-  width: 100%;
-  max-width: 100%;
-  height: 100%;
-  max-height: none;
   min-height: 0;
-  aspect-ratio: auto;
-  border-bottom: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #000;
+}
+.player-sidebar.fullscreen .player-stage-host {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.player-sidebar.fullscreen .player-stage {
+  width: min(100%, calc(100vh * var(--player-ar, 1.777778)));
+  max-width: 100%;
+  max-height: 100%;
+  height: auto;
+  aspect-ratio: var(--player-ar, 16 / 9);
+}
+@supports (width: 1cqw) {
+  .player-sidebar.fullscreen .player-stage {
+    width: min(100cqw, calc(100cqh * var(--player-ar, 1.777778)));
+  }
 }
 .player-sidebar.fullscreen .player-video {
   width: 100%;
@@ -916,7 +983,7 @@ body.is-resizing-rail * {
   object-fit: contain;
   object-position: center;
 }
-/* Queue stays mounted but hidden in FS. */
+.player-sidebar.fullscreen .queue-resize,
 .player-sidebar.fullscreen .sidebar-queue {
   display: none !important;
   border: none !important;
@@ -1004,7 +1071,35 @@ video::-webkit-media-controls-fullscreen-button {
   color: #fff;
 }
 .player-sidebar.fullscreen .player-fs-bar .icon-btn:hover {
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+}
+.player-sidebar.fullscreen .player-fs-bar .player-fs-details {
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0 0.7rem;
+  width: auto;
+  min-width: 0;
+  height: 2rem;
+  border-radius: 8px;
+}
+.player-sidebar.fullscreen .player-fs-bar .player-fs-exit {
+  margin-left: 0.15rem;
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.38);
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 0 0.85rem;
+  width: auto;
+  min-width: 0;
+  height: 2rem;
+  border-radius: 8px;
+  letter-spacing: 0.01em;
+}
+.player-sidebar.fullscreen .player-fs-bar .player-fs-exit:hover {
   background: var(--accent);
+  border-color: var(--accent);
   color: #fff;
 }
 .player-title {
@@ -1033,15 +1128,52 @@ video::-webkit-media-controls-fullscreen-button {
   color: #fff;
 }
 .sidebar-queue {
-  /* Fills leftover rail height under the fixed 16:9 stage. */
-  flex: 1 1 0;
-  min-height: 0;
-  max-height: none;
+  /* Resizable height; upper video pane takes the leftover. */
+  flex: 0 0 var(--player-queue-h, clamp(160px, 34%, 480px));
+  height: var(--player-queue-h, clamp(160px, 34%, 480px));
+  min-height: 88px;
+  max-height: calc(100% - 160px);
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+}
+.player-sidebar:not(:has(.player-upper)) .sidebar-queue {
+  flex: 1 1 auto;
+  height: auto;
+  max-height: none;
 }
 .sidebar-queue.is-hidden {
   display: none;
+}
+.queue-resize {
+  flex: 0 0 8px;
+  position: relative;
+  z-index: 5;
+  cursor: row-resize;
+  touch-action: none;
+  background: transparent;
+}
+.queue-resize::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 2px;
+  transform: translateX(-50%);
+  width: 48px;
+  height: 3px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.14);
+  transition: background 0.15s ease, width 0.15s ease;
+}
+.queue-resize:hover::after,
+body.is-resizing-queue .queue-resize::after {
+  background: var(--accent);
+  width: 100%;
+  left: 0;
+  transform: none;
+  border-radius: 0;
+  height: 3px;
+  top: 2px;
 }
 .sidebar-queue-header {
   display: flex;

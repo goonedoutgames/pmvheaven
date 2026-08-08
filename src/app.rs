@@ -6,8 +6,8 @@ use crate::services::repo::watched_progress_map;
 use crate::services::stream_proxy;
 use crate::ui::chrome::{MAIN_CSS, HLS_JS, WindowChrome};
 use crate::ui::ctx::{
-    HoverPreviewVolume, HoverPreviews, PausePreviewsWhilePlaying, PlayerFs, PlayerRailW,
-    ProxyBase, QueueOpen, QueueTick, StartAt,
+    HoverPreviewVolume, HoverPreviews, PausePreviewsWhilePlaying, PlayerFs, PlayerQueueH,
+    PlayerRailW, ProxyBase, QueueOpen, QueueTick, StartAt,
 };
 use crate::ui::legacy_gate::LegacyDbGate;
 use crate::ui::nav::Route;
@@ -15,6 +15,7 @@ use crate::ui::update_prompt::UpdatePrompt;
 use dioxus::prelude::*;
 
 const PLAYER_RAIL_WIDTH_KEY: &str = "player_rail_width";
+const PLAYER_QUEUE_HEIGHT_KEY: &str = "player_queue_height";
 const HOVER_PREVIEWS_KEY: &str = "hover_previews";
 const PAUSE_PREVIEWS_WHILE_PLAYING_KEY: &str = "pause_previews_while_playing";
 const HOVER_PREVIEW_VOLUME_KEY: &str = "hover_preview_volume";
@@ -33,6 +34,7 @@ pub fn App() -> Element {
     let watched_map = use_signal(watched_progress_map);
     let player_fs = use_signal(|| false);
     let player_rail_w = use_signal(load_player_rail_width);
+    let player_queue_h = use_signal(load_player_queue_height);
     let hover_previews = use_signal(load_hover_previews);
     let pause_previews_while_playing = use_signal(load_pause_previews_while_playing);
     let hover_preview_volume = use_signal(load_hover_preview_volume);
@@ -48,6 +50,7 @@ pub fn App() -> Element {
     use_context_provider(|| watched_map);
     use_context_provider(|| PlayerFs(player_fs));
     use_context_provider(|| PlayerRailW(player_rail_w));
+    use_context_provider(|| PlayerQueueH(player_queue_h));
     use_context_provider(|| HoverPreviews(hover_previews));
     use_context_provider(|| PausePreviewsWhilePlaying(pause_previews_while_playing));
     use_context_provider(|| HoverPreviewVolume(hover_preview_volume));
@@ -60,14 +63,18 @@ pub fn App() -> Element {
     });
 
     let main_class = if player_fs() { "is-player-fs" } else { "" };
-    let rail_style = player_rail_w()
-        .map(|w| format!("--player-rail-w:{w}px"))
-        .unwrap_or_default();
+    let mut layout_vars = String::new();
+    if let Some(w) = player_rail_w() {
+        layout_vars.push_str(&format!("--player-rail-w:{w}px;"));
+    }
+    if let Some(h) = player_queue_h() {
+        layout_vars.push_str(&format!("--player-queue-h:{h}px;"));
+    }
 
     rsx! {
         document::Link { rel: "stylesheet", href: MAIN_CSS }
         document::Script { src: HLS_JS }
-        div { id: "main", class: "{main_class}", style: "{rail_style}",
+        div { id: "main", class: "{main_class}", style: "{layout_vars}",
             WindowChrome {}
             if show_legacy() {
                 LegacyDbGate {
@@ -93,12 +100,24 @@ pub fn App() -> Element {
 fn load_player_rail_width() -> Option<u32> {
     get_setting(PLAYER_RAIL_WIDTH_KEY)
         .and_then(|s| s.parse().ok())
-        .filter(|w| (320..=1000).contains(w))
+        .filter(|w| (280..=1400).contains(w))
 }
 
 pub fn save_player_rail_width(w: u32) {
-    if (320..=1000).contains(&w) {
+    if (280..=1400).contains(&w) {
         set_setting(PLAYER_RAIL_WIDTH_KEY, &w.to_string());
+    }
+}
+
+fn load_player_queue_height() -> Option<u32> {
+    get_setting(PLAYER_QUEUE_HEIGHT_KEY)
+        .and_then(|s| s.parse().ok())
+        .filter(|h| (88..=1200).contains(h))
+}
+
+pub fn save_player_queue_height(h: u32) {
+    if (88..=1200).contains(&h) {
+        set_setting(PLAYER_QUEUE_HEIGHT_KEY, &h.to_string());
     }
 }
 
