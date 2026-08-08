@@ -880,18 +880,29 @@ body.is-resizing-queue .sidebar-queue {
 }
 .app-shell.player-fs .app-main {
   /* Hide, don't unmount — same as v1 AppShell, so the page tree stays put. */
-  display: none;
+  display: none !important;
+}
+.app-shell.player-fs {
+  /* Player is the only visible pane — fill the OS window. */
+  display: block !important;
+  width: 100% !important;
+  height: 100% !important;
 }
 .app-shell.player-fs .player-sidebar,
 .player-sidebar.fullscreen {
-  width: 100%;
-  max-width: none;
-  min-width: 0;
-  border-left: none;
-  border-top: none;
-  flex: 1;
-  max-height: none;
-  position: relative;
+  /* Beat --player-rail-w and any leftover inline width from rail drag. */
+  width: 100% !important;
+  max-width: none !important;
+  min-width: 0 !important;
+  height: 100% !important;
+  max-height: none !important;
+  border-left: none !important;
+  border-top: none !important;
+  flex: none !important;
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 50;
+  background: #000;
 }
 .player-upper {
   flex: 1 1 auto;
@@ -958,49 +969,51 @@ body.is-resizing-queue .sidebar-queue {
 /* Fullscreen = normal browser FS: fill the viewport, video contain+centered.
    Ignore sidebar/queue resize vars and the rail AR stage box. */
 .player-sidebar.fullscreen .player-upper {
-  flex: 1 1 auto;
-  min-height: 0;
-  height: 100%;
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-height: none !important;
 }
 .player-sidebar.fullscreen .player-meta:not(.player-fs-bar) {
   display: none;
 }
 .player-sidebar.fullscreen .player-stage-host {
-  flex: 1 1 auto;
-  min-height: 0;
-  width: 100%;
-  height: 100%;
-  max-width: none;
-  max-height: none;
-  display: block;
-  position: relative;
-  container-type: normal;
-}
-.player-sidebar.fullscreen .player-stage,
-.player-sidebar.fullscreen .player-stage.is-portrait {
-  position: absolute;
-  inset: 0;
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
   width: 100% !important;
   height: 100% !important;
   max-width: none !important;
   max-height: none !important;
-  min-width: 0;
-  min-height: 0;
-  margin: 0;
+  display: block !important;
+  position: relative !important;
+  container-type: normal;
+}
+.player-sidebar.fullscreen .player-stage,
+.player-sidebar.fullscreen .player-stage.is-portrait {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: none !important;
+  max-height: none !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  margin: 0 !important;
   aspect-ratio: auto !important;
-  border: none;
-  display: flex;
+  border: none !important;
+  display: flex !important;
   align-items: center;
   justify-content: center;
   background: #000;
 }
 .player-sidebar.fullscreen .player-video {
-  width: 100%;
-  height: 100%;
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
-  object-position: center;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
+  object-fit: contain !important;
+  object-position: center !important;
 }
 .player-sidebar.fullscreen .queue-resize,
 .player-sidebar.fullscreen .sidebar-queue {

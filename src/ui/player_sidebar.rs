@@ -771,8 +771,7 @@ const RAIL_RESIZE_JS: &str = r#"
   };
   const applyW = (w, clientX, clientY) => {
     const px = w + 'px';
-    aside.style.width = px;
-    aside.style.maxWidth = px;
+    // Only CSS vars — never inline width (that stuck through fullscreen).
     document.documentElement.style.setProperty('--player-rail-w', px);
     const main = document.getElementById('main');
     if (main) main.style.setProperty('--player-rail-w', px);
@@ -860,9 +859,9 @@ const QUEUE_RESIZE_JS: &str = r#"
       window.__pmvQueueBaseH = queue.getBoundingClientRect().height;
       window.__pmvQueueBaseY = e.clientY;
     }
-    // Drag handle down → taller queue; up → shorter queue.
+    // Handle is the TOP edge of the queue: drag up → taller queue (divider follows mouse).
     const h = Math.round(
-      Math.min(maxH(), Math.max(minH, window.__pmvQueueBaseH + (e.clientY - window.__pmvQueueBaseY)))
+      Math.min(maxH(), Math.max(minH, window.__pmvQueueBaseH - (e.clientY - window.__pmvQueueBaseY)))
     );
     applyH(h, e.clientX, e.clientY);
   };
@@ -1071,5 +1070,30 @@ fn set_fullscreen_mode(on: bool, mut player_fs: Signal<bool>) {
     // v1: in-flow fill + Tauri setFullscreen. Same here via wry/tao.
     // Native <video> fullscreen stays blocked (black on WebKitGTK).
     dioxus::desktop::window().set_fullscreen(on);
-    // Idle-hide chrome is wired in PlayerSidebar's player_fs effect.
+    // Strip any leftover inline geometry from rail/queue drag so FS can fill.
+    spawn(async move {
+        let _ = document::eval(&format!(
+            r#"
+            const aside = document.querySelector('.player-sidebar');
+            if (aside) {{
+              aside.style.removeProperty('width');
+              aside.style.removeProperty('max-width');
+              aside.style.removeProperty('min-width');
+              aside.style.removeProperty('height');
+              aside.style.removeProperty('max-height');
+            }}
+            const queue = document.querySelector('.sidebar-queue');
+            if (queue && {on}) {{
+              /* FS hides queue; leave saved size in CSS vars for exit. */
+            }}
+            if ({on}) {{
+              document.documentElement.classList.add('pmv-player-fs');
+            }} else {{
+              document.documentElement.classList.remove('pmv-player-fs');
+            }}
+            return 'fs-layout';
+            "#
+        ))
+        .await;
+    });
 }
