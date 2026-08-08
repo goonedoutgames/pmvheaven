@@ -111,7 +111,7 @@ pub fn PlayerSidebar() -> Element {
             return;
         }
         let resume = *start_at.peek();
-        let (file_src, hls_src, hint_ar) = now_playing
+        let (file_src, hls_src, hint_ar, thumb) = now_playing
             .peek()
             .as_ref()
             .map(|p| {
@@ -128,9 +128,10 @@ pub fn PlayerSidebar() -> Element {
                 } else {
                     16.0 / 9.0
                 };
-                (file, hls, ar)
+                let thumb = p.summary.thumbnail_url.clone();
+                (file, hls, ar, thumb)
             })
-            .unwrap_or((String::new(), String::new(), 16.0 / 9.0));
+            .unwrap_or((String::new(), String::new(), 16.0 / 9.0, String::new()));
         LAST_POS_MS.store((resume * 1000.0) as u64, Ordering::Relaxed);
         spawn(async move {
             tokio::time::sleep(std::time::Duration::from_millis(60)).await;
@@ -199,6 +200,30 @@ pub fn PlayerSidebar() -> Element {
                   el.addEventListener('loadeddata', refineAr);
                 }} else if (el.videoWidth > 0 && el.videoHeight > 0) {{
                   applyStageAr(el.videoWidth / el.videoHeight);
+                }}
+
+                // Avoid WebView poster+controls composite clipping on queue switches:
+                // show thumb on the stage until the first decoded frame, then enable controls.
+                const stageEl = el.closest('.player-stage');
+                const thumb = {thumb:?};
+                const revealFrame = () => {{
+                  el.controls = true;
+                  if (stageEl) {{
+                    stageEl.classList.remove('is-awaiting-frame');
+                    stageEl.style.removeProperty('--player-poster');
+                  }}
+                  try {{ el.removeAttribute('poster'); }} catch (e) {{}}
+                }};
+                el.controls = false;
+                try {{ el.removeAttribute('poster'); }} catch (e) {{}}
+                if (stageEl) {{
+                  stageEl.classList.add('is-awaiting-frame');
+                  if (thumb) stageEl.style.setProperty('--player-poster', 'url(' + JSON.stringify(thumb) + ')');
+                }}
+                if (el.readyState >= 2) revealFrame();
+                else {{
+                  el.addEventListener('loadeddata', revealFrame, {{ once: true }});
+                  el.addEventListener('playing', revealFrame, {{ once: true }});
                 }}
 
                 const resume = {resume};
@@ -466,7 +491,6 @@ pub fn PlayerSidebar() -> Element {
                 {
                     let id = playable.summary.id.clone();
                     let title = playable.summary.title.clone();
-                    let thumb = playable.summary.thumbnail_url.clone();
                     let has_file = !playable.video_url.is_empty();
                     let has_hls = playable
                         .hls_master_playlist_url
@@ -499,8 +523,7 @@ pub fn PlayerSidebar() -> Element {
                                             key: "{id}",
                                             id: "pmv-player",
                                             class: "player-video",
-                                            poster: "{thumb}",
-                                            controls: true,
+                                            controls: false,
                                             playsinline: true,
                                             preload: "auto",
                                         }
@@ -771,10 +794,12 @@ const RAIL_RESIZE_JS: &str = r#"
   };
   const applyW = (w, clientX, clientY) => {
     const px = w + 'px';
-    // Only CSS vars — never inline width (that stuck through fullscreen).
     document.documentElement.style.setProperty('--player-rail-w', px);
-    const main = document.getElementById('main');
-    if (main) main.style.setProperty('--player-rail-w', px);
+    // Inline during drag for immediate paint; cleared on pointerup / fullscreen.
+    if (!aside.classList.contains('fullscreen')) {
+      aside.style.width = px;
+      aside.style.maxWidth = 'none';
+    }
     window.__pmvRailLastW = w;
     const badge = ensureUi();
     badge.textContent = w + 'px wide';
@@ -800,6 +825,9 @@ const RAIL_RESIZE_JS: &str = r#"
     const badge = document.getElementById('pmv-resize-badge');
     if (badge) badge.style.display = 'none';
     const w = window.__pmvRailLastW;
+    // Drop inline width — persisted size lives in --player-rail-w (+ signal).
+    aside.style.removeProperty('width');
+    aside.style.removeProperty('max-width');
     window.__pmvRailBaseW = null;
     window.__pmvRailBaseX = null;
     if (w) send('rail|' + w);
@@ -873,6 +901,9 @@ const QUEUE_RESIZE_JS: &str = r#"
     const badge = document.getElementById('pmv-resize-badge');
     if (badge) badge.style.display = 'none';
     const h = window.__pmvQueueLastH;
+    queue.style.removeProperty('flex');
+    queue.style.removeProperty('height');
+    queue.style.removeProperty('max-height');
     window.__pmvQueueBaseH = null;
     window.__pmvQueueBaseY = null;
     if (h) send('queueh|' + h);

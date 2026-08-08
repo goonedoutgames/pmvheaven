@@ -57,7 +57,7 @@ No Node runtime is bundled.
 
 Pushes to `main` run [`.github/workflows/release.yml`](.github/workflows/release.yml):
 
-1. Read semver from `Cargo.toml` (`2.2.6` → tag `v2.2.6`)
+1. Read semver from `Cargo.toml` (`2.2.7` → tag `v2.2.7`)
 2. Skip if that GitHub Release already exists (bump the Cargo version to cut a new one)
 3. Build **Windows NSIS `.exe` installer** only
 4. Publish a GitHub Release with that artifact

@@ -63,18 +63,38 @@ pub fn App() -> Element {
     });
 
     let main_class = if player_fs() { "is-player-fs" } else { "" };
-    let mut layout_vars = String::new();
-    if let Some(w) = player_rail_w() {
-        layout_vars.push_str(&format!("--player-rail-w:{w}px;"));
-    }
-    if let Some(h) = player_queue_h() {
-        layout_vars.push_str(&format!("--player-queue-h:{h}px;"));
-    }
+
+    // Keep layout vars on <html> so #main style diffs don't clobber live resize.
+    use_effect(move || {
+        let w = player_rail_w();
+        let h = player_queue_h();
+        spawn(async move {
+            let w_js = w
+                .map(|n| format!("'{n}px'"))
+                .unwrap_or_else(|| "null".into());
+            let h_js = h
+                .map(|n| format!("'{n}px'"))
+                .unwrap_or_else(|| "null".into());
+            let _ = document::eval(&format!(
+                r#"
+                const s = document.documentElement.style;
+                const w = {w_js};
+                const h = {h_js};
+                if (w) s.setProperty('--player-rail-w', w);
+                else s.removeProperty('--player-rail-w');
+                if (h) s.setProperty('--player-queue-h', h);
+                else s.removeProperty('--player-queue-h');
+                return 'layout-vars';
+                "#
+            ))
+            .await;
+        });
+    });
 
     rsx! {
         document::Link { rel: "stylesheet", href: MAIN_CSS }
         document::Script { src: HLS_JS }
-        div { id: "main", class: "{main_class}", style: "{layout_vars}",
+        div { id: "main", class: "{main_class}",
             WindowChrome {}
             if show_legacy() {
                 LegacyDbGate {

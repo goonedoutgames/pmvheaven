@@ -963,6 +963,18 @@ body.is-resizing-queue .sidebar-queue {
   contain: paint;
   will-change: contents;
 }
+/* Queue/source switch: thumb on stage until first frame (avoids controls clipping poster). */
+.player-stage.is-awaiting-frame {
+  background-color: #000;
+  background-image: var(--player-poster, none);
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+}
+.player-stage.is-awaiting-frame .player-video {
+  opacity: 0;
+  pointer-events: none;
+}
 .player-sidebar.fullscreen {
   background: #000;
 }
