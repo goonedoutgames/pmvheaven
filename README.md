@@ -43,7 +43,7 @@ dx bundle --platform desktop --release
 
 On Linux this produces an AppImage under:
 
-`target/dx/pmvheaven/bundle/linux/appimage/pmvheaven_2.2.4_x86_64.AppImage`
+`target/dx/pmvheaven/bundle/linux/appimage/pmvheaven_2.2.5_x86_64.AppImage`
 
 Post-process for rolling-release Wayland hosts (bundles WebKit helpers + matching GStreamer plugins, strips bundled `libwayland*`):
 
@@ -57,7 +57,7 @@ No Node runtime is bundled. Windows builds use the same command on a Windows hos
 
 Pushes to `main` run [`.github/workflows/release.yml`](.github/workflows/release.yml):
 
-1. Read semver from `Cargo.toml` (`2.2.4` → tag `v2.2.4`)
+1. Read semver from `Cargo.toml` (`2.2.5` → tag `v2.2.5`)
 2. Skip if that GitHub Release already exists (bump the Cargo version to cut a new one)
 3. Build **Linux AppImage** + **Windows NSIS `.exe` installer**
 4. Publish a GitHub Release with both artifacts

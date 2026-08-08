@@ -3585,7 +3585,7 @@ checksum = "19f132c84eca552bf34cab8ec81f1c1dcc229b811638f9d283dceabe58c5569e"
 
 [[package]]
 name = "pmvheaven"
-version = "2.2.4"
+version = "2.2.5"
 dependencies = [
  "aes-gcm",
  "anyhow",
