@@ -172,15 +172,15 @@ pub fn PlayerSidebar() -> Element {
                   }});
                 }}
 
-                // Stage AR from API hint, refined from decoded frame size.
-                // Portrait clips use cover + drag-to-pan to kill letterboxing.
+                // Size the stage to the clip's real AR. Never crop — CSS uses contain.
                 const applyStageAr = (ar) => {{
                   const stage = el.closest('.player-stage');
                   if (!stage || !(ar > 0)) return;
                   stage.style.setProperty('--player-ar', String(ar));
-                  const portrait = ar < 1;
-                  stage.classList.toggle('is-portrait', portrait);
-                  stage.classList.toggle('is-cover', portrait);
+                  stage.classList.toggle('is-portrait', ar < 1);
+                  stage.classList.remove('is-cover');
+                  el.style.objectFit = 'contain';
+                  el.style.removeProperty('object-position');
                 }};
                 applyStageAr({hint_ar});
                 const refineAr = () => {{
@@ -191,63 +191,6 @@ pub fn PlayerSidebar() -> Element {
                 if (el.readyState >= 1) refineAr();
                 else el.addEventListener('loadedmetadata', refineAr, {{ once: true }});
                 el.addEventListener('loadeddata', refineAr, {{ once: true }});
-
-                if (!el.dataset.panBound) {{
-                  el.dataset.panBound = '1';
-                  let dragging = false;
-                  let startX = 0, startY = 0, posX = 50, posY = 50;
-                  const stageOf = () => el.closest('.player-stage');
-                  const applyPos = () => {{
-                    el.style.objectPosition = posX.toFixed(1) + '% ' + posY.toFixed(1) + '%';
-                  }};
-                  const resetPos = () => {{
-                    posX = 50; posY = 50; applyPos();
-                  }};
-                  el.addEventListener('pointerdown', (e) => {{
-                    const stage = stageOf();
-                    if (!stage || !stage.classList.contains('is-cover')) return;
-                    // Leave native controls alone (bottom strip).
-                    const rect = el.getBoundingClientRect();
-                    if (e.clientY > rect.bottom - 52) return;
-                    if (e.button !== 0) return;
-                    dragging = true;
-                    startX = e.clientX;
-                    startY = e.clientY;
-                    try {{ el.setPointerCapture(e.pointerId); }} catch (err) {{}}
-                    e.preventDefault();
-                  }});
-                  el.addEventListener('pointermove', (e) => {{
-                    if (!dragging) return;
-                    const stage = stageOf();
-                    if (!stage) return;
-                    const dx = e.clientX - startX;
-                    const dy = e.clientY - startY;
-                    startX = e.clientX;
-                    startY = e.clientY;
-                    // Drag content under the viewport (inverse of finger).
-                    const w = Math.max(stage.clientWidth, 1);
-                    const h = Math.max(stage.clientHeight, 1);
-                    posX = Math.max(0, Math.min(100, posX - (dx / w) * 100));
-                    posY = Math.max(0, Math.min(100, posY - (dy / h) * 100));
-                    applyPos();
-                  }});
-                  const endDrag = (e) => {{
-                    if (!dragging) return;
-                    dragging = false;
-                    try {{ el.releasePointerCapture(e.pointerId); }} catch (err) {{}}
-                  }};
-                  el.addEventListener('pointerup', endDrag);
-                  el.addEventListener('pointercancel', endDrag);
-                  el.addEventListener('emptied', resetPos);
-                  el.addEventListener('loadedmetadata', () => {{
-                    // New clip (or quality switch) — center again.
-                    if (el.dataset.vid && el.dataset.vid !== el.dataset.panVid) {{
-                      el.dataset.panVid = el.dataset.vid;
-                      resetPos();
-                    }}
-                  }});
-                }}
-                if (el.dataset.vid) el.dataset.panVid = el.dataset.vid;
 
                 const resume = {resume};
                 const fileSrc = {file_src:?};
@@ -529,9 +472,8 @@ pub fn PlayerSidebar() -> Element {
                     } else {
                         16.0 / 9.0
                     };
-                    let portrait = ar < 1.0;
-                    let stage_class = if portrait {
-                        "player-stage is-portrait is-cover"
+                    let stage_class = if ar < 1.0 {
+                        "player-stage is-portrait"
                     } else {
                         "player-stage"
                     };
