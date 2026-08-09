@@ -45,14 +45,14 @@ cargo run
 
 Released Linux builds are **Flatpak** (`com.pmvheaven.Desktop`), built inside `org.gnome.Sdk` so WebKitGTK and GStreamer match the runtime on every distro (Arch/CachyOS included).
 
-### One-time: Flathub + GNOME Platform 48
+### One-time: Flathub + GNOME Platform 50
 
-The bundle needs `org.gnome.Platform//48` from Flathub (not shipped inside the `.flatpak` file):
+The bundle needs `org.gnome.Platform//50` from Flathub (not shipped inside the `.flatpak` file):
 
 ```bash
 # Arch/CachyOS: sudo pacman -S flatpak
 flatpak remote-add --if-not-exists --user flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-flatpak install --user -y flathub org.gnome.Platform//48
+flatpak install --user -y flathub org.gnome.Platform//50
 ```
 
 ### Install the app bundle
@@ -62,7 +62,14 @@ flatpak install --user -y ./PMVHeaven-<version>-x86_64.flatpak
 flatpak run com.pmvheaven.Desktop
 ```
 
-If a GUI installer fails with “requires the runtime org.gnome.Platform/…/48 which was not found”, run the Flathub/Platform commands above, then retry.
+If a GUI installer fails with “requires the runtime org.gnome.Platform/… which was not found”, run the Flathub/Platform commands above, then retry.
+
+**Already installed an older build that crashes on launch** (`cannot open display` / `readPIDFromPeer`)? That is WebKit’s inner sandbox inside Flatpak. Until you install a new build, override:
+
+```bash
+flatpak override --user --env=WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1 com.pmvheaven.Desktop
+flatpak run com.pmvheaven.Desktop
+```
 
 App data lives under the Flatpak sandbox, e.g.
 `~/.var/app/com.pmvheaven.Desktop/data/com.pmvheaven.desktop/`.

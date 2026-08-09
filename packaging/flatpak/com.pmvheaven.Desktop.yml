@@ -10,7 +10,7 @@
 
 app-id: com.pmvheaven.Desktop
 runtime: org.gnome.Platform
-runtime-version: "48"
+runtime-version: "50"
 sdk: org.gnome.Sdk
 sdk-extensions:
   - org.freedesktop.Sdk.Extension.rust-stable
@@ -24,6 +24,10 @@ finish-args:
   - --device=dri
   - --filesystem=xdg-download
   - --talk-name=org.freedesktop.Notifications
+  # WebKit's inner bwrap sandbox fails inside Flatpak (empty display +
+  # "readPIDFromPeer: Unexpected short read from PID socket"). Outer Flatpak
+  # sandbox still applies. See WebKitGTK BubblewrapLauncher / glibc memfd issues.
+  - --env=WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1
 modules:
   # muda (dioxus-desktop menus) links libxdo; not in the GNOME SDK by default.
   - name: xdotool

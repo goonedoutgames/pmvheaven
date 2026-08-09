@@ -78,7 +78,7 @@ jobs:
     if: needs.version.outputs.should_release == 'true'
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-48
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-50
       options: --privileged
     steps:
       - uses: actions/checkout@v4
@@ -222,11 +222,11 @@ jobs:
             "" \
             "### Linux install" \
             "" \
-            "Needs Flathub + \`org.gnome.Platform//48\` once:" \
+            "Needs Flathub + \`org.gnome.Platform//50\` once:" \
             "" \
             '```bash' \
             "flatpak remote-add --if-not-exists --user flathub https://dl.flathub.org/repo/flathub.flatpakrepo" \
-            "flatpak install --user -y flathub org.gnome.Platform//48" \
+            "flatpak install --user -y flathub org.gnome.Platform//50" \
             "flatpak install --user -y ./PMVHeaven-${VERSION}-x86_64.flatpak" \
             "flatpak run com.pmvheaven.Desktop" \
             '```' \
