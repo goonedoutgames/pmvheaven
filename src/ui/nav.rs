@@ -1,5 +1,5 @@
 use crate::models::{AccountUser, PlayableVideo};
-use crate::ui::chrome::BrandLogo;
+use crate::ui::chrome::LOGO;
 use crate::ui::ctx::{PlayerFs, QueueOpen, QueueTick};
 use crate::ui::play_choice::PlayChoiceModal;
 use crate::ui::player_sidebar::PlayerSidebar;
@@ -91,7 +91,7 @@ fn AppLayout() -> Element {
                             to: Route::Home {},
                             class: "nav-brand",
                             onclick: close_menu,
-                            BrandLogo {}
+                            img { src: LOGO, alt: "PMVHeaven" }
                             span { class: "nav-brand-text", "PMVHeaven" }
                         }
                         div { class: "nav-links nav-links-primary",

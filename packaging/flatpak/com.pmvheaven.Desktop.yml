@@ -67,7 +67,7 @@ modules:
         echo "pre-build checks:"
         ls -la /app/lib/libxdo*
         pkg-config --libs libxdo
-        # UI assets (CSS/logo/hls.js) are include_bytes! data-URLs — no dx linker required.
+        # UI assets come from Dioxus `asset!()` (embedded by manganis at compile time).
         cargo --offline fetch --manifest-path Cargo.toml --verbose
         cargo --offline build --release --verbose
         install -Dm755 target/release/pmvheaven /app/bin/pmvheaven

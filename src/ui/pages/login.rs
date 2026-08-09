@@ -1,7 +1,7 @@
 use crate::models::AccountUser;
 use crate::services::pmv::shared_client;
 use crate::services::sync::sync_watch_history;
-use crate::ui::chrome::BrandLogo;
+use crate::ui::chrome::LOGO;
 use crate::ui::nav::Route;
 use crate::ui::pages::components::refresh_watched_map;
 use dioxus::prelude::*;
@@ -20,7 +20,7 @@ pub fn Login() -> Element {
     rsx! {
         div { class: "login-page",
             div { style: "text-align:center; margin-bottom:1.5rem;",
-                BrandLogo { style: "width:72px; height:72px; border-radius:16px;" }
+                img { src: LOGO, alt: "PMVHeaven", style: "width:72px; height:72px; border-radius:16px;" }
                 h1 { "Sign in" }
                 p { class: "muted", "Connect your PMVHaven account. Credentials stay encrypted on this device." }
             }
