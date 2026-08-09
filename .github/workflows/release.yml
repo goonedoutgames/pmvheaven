@@ -222,8 +222,12 @@ jobs:
             "" \
             "### Linux install" \
             "" \
+            "Needs Flathub + \`org.gnome.Platform//48\` once:" \
+            "" \
             '```bash' \
-            "flatpak install --user ./PMVHeaven-${VERSION}-x86_64.flatpak" \
+            "flatpak remote-add --if-not-exists --user flathub https://dl.flathub.org/repo/flathub.flatpakrepo" \
+            "flatpak install --user -y flathub org.gnome.Platform//48" \
+            "flatpak install --user -y ./PMVHeaven-${VERSION}-x86_64.flatpak" \
             "flatpak run com.pmvheaven.Desktop" \
             '```' \
             "" \

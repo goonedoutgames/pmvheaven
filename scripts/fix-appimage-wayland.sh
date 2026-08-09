@@ -211,6 +211,35 @@ fi
 ln -sfn "\$WK_TARGET" "\$WK_LINK"
 export WEBKIT_INJECTED_BUNDLE_PATH="\$WK_TARGET/injected-bundle"
 
+# WebKit/glib-networking must verify HTTPS for thumbnails + media. Rust API
+# traffic uses rustls (works without this); <img>/<video> go through WebKit TLS.
+# Prefer the host CA bundle — AppImages rarely ship a complete trust store.
+for certs in \\
+  /etc/ssl/certs/ca-certificates.crt \\
+  /etc/ca-certificates/extracted/tls-ca-bundle.pem \\
+  /etc/pki/tls/certs/ca-bundle.crt \\
+  /etc/ssl/ca-bundle.pem \\
+  /etc/ssl/cert.pem; do
+  if [[ -f "\$certs" ]]; then
+    export SSL_CERT_FILE="\$certs"
+    export SSL_CERT_DIR="\$(dirname "\$certs")"
+    export CURL_CA_BUNDLE="\$certs"
+    export REQUESTS_CA_BUNDLE="\$certs"
+    export G_TLS_SYSTEM_CERT_FILE="\$certs"
+    break
+  fi
+done
+# Prefer host GIO TLS modules when present (gnutls backend + system trust).
+for gio in \\
+  /usr/lib/gio/modules \\
+  /usr/lib64/gio/modules \\
+  /usr/lib/x86_64-linux-gnu/gio/modules; do
+  if [[ -d "\$gio" ]]; then
+    export GIO_EXTRA_MODULES="\$gio\${GIO_EXTRA_MODULES:+:\$GIO_EXTRA_MODULES}"
+    break
+  fi
+done
+
 # Prefer host Wayland client over anything still resolved from the AppDir.
 if [[ -z "\${LD_PRELOAD:-}" ]]; then
   for lib in \\

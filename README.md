@@ -45,12 +45,24 @@ cargo run
 
 Released Linux builds are **Flatpak** (`com.pmvheaven.Desktop`), built inside `org.gnome.Sdk` so WebKitGTK and GStreamer match the runtime on every distro (Arch/CachyOS included).
 
-Install from a GitHub Release asset:
+### One-time: Flathub + GNOME Platform 48
+
+The bundle needs `org.gnome.Platform//48` from Flathub (not shipped inside the `.flatpak` file):
 
 ```bash
-flatpak install --user ./PMVHeaven-<version>-x86_64.flatpak
+# Arch/CachyOS: sudo pacman -S flatpak
+flatpak remote-add --if-not-exists --user flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+flatpak install --user -y flathub org.gnome.Platform//48
+```
+
+### Install the app bundle
+
+```bash
+flatpak install --user -y ./PMVHeaven-<version>-x86_64.flatpak
 flatpak run com.pmvheaven.Desktop
 ```
+
+If a GUI installer fails with “requires the runtime org.gnome.Platform/…/48 which was not found”, run the Flathub/Platform commands above, then retry.
 
 App data lives under the Flatpak sandbox, e.g.
 `~/.var/app/com.pmvheaven.Desktop/data/com.pmvheaven.desktop/`.
