@@ -116,17 +116,22 @@ pub fn PlayerSidebar() -> Element {
             .as_ref()
             .map(|p| {
                 // Always proxy media through the local Referer-injecting proxy.
-                // Direct CDN fetches from WebKit often fail (hotlink / auth), while
-                // API + thumbnails may still work — leaving a stuck poster, no controls.
-                let file = if p.video_url.is_empty() {
+                // Direct CDN fetches from WebKit often fail (hotlink / auth).
+                let raw_file = p.video_url.clone();
+                let file_is_playlist = raw_file.contains(".m3u8");
+                let file = if raw_file.is_empty() || file_is_playlist {
                     String::new()
                 } else {
-                    proxied_url(&proxy_base.peek(), &p.video_url)
+                    proxied_url(&proxy_base.peek(), &raw_file)
                 };
                 let hls = p
                     .hls_master_playlist_url
                     .as_deref()
                     .filter(|u| !u.is_empty())
+                    .or_else(|| {
+                        // Some API payloads put the master playlist in videoUrl.
+                        file_is_playlist.then_some(raw_file.as_str())
+                    })
                     .map(|u| proxied_url(&proxy_base.peek(), u))
                     .filter(|u| !u.is_empty())
                     .unwrap_or_default();
@@ -283,6 +288,12 @@ pub fn PlayerSidebar() -> Element {
                   if (!fileSrc) return 'no-file';
                   el.dataset.boundSrc = 'file:' + fileSrc;
                   el.src = resume > 1 ? (fileSrc + '#t=' + Math.floor(resume)) : fileSrc;
+                  const onErr = () => {{
+                    el.removeEventListener('error', onErr);
+                    if (hlsSrc) playHls();
+                    else revealFrame();
+                  }};
+                  el.addEventListener('error', onErr, {{ once: true }});
                   const p = el.play();
                   if (p && p.catch) p.catch(() => {{}});
                   return 'file';

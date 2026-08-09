@@ -17,6 +17,19 @@ const ALLOWED_HOST_SUFFIXES: &[&str] = &[
     "pmvhaven.com",
     ".io.cloud.ovh.net",
     ".r2.cloudflarestorage.com",
+    ".cloudflarestorage.com",
+    ".cloudfront.net",
+    ".amazonaws.com",
+    ".b-cdn.net",
+    ".bunnycdn.com",
+    ".bunny.net",
+    ".backblazeb2.com",
+    ".digitaloceanspaces.com",
+    ".googleapis.com",
+    ".googleusercontent.com",
+    ".fastly.net",
+    ".akamaihd.net",
+    ".akamaized.net",
 ];
 
 fn is_allowed(url: &url::Url) -> bool {
@@ -95,6 +108,10 @@ async fn stream_handler(
         return (StatusCode::BAD_REQUEST, "Invalid url").into_response();
     };
     if url.scheme() != "https" || !is_allowed(&url) {
+        tracing::warn!(
+            host = url.host_str().unwrap_or(""),
+            "stream proxy rejected url (add host to allowlist if legitimate)"
+        );
         return (StatusCode::FORBIDDEN, "Host not allowed").into_response();
     }
 

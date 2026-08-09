@@ -2,7 +2,10 @@ use crate::models::{AccountUser, PlayableVideo, VideoSummary};
 use crate::services::player::{self, OpenIntent};
 use crate::services::queue;
 use crate::services::repo::watched_progress_map;
-use crate::ui::ctx::{HoverPreviewVolume, HoverPreviews, PausePreviewsWhilePlaying, QueueTick};
+use crate::services::stream_proxy::proxied_url;
+use crate::ui::ctx::{
+    HoverPreviewVolume, HoverPreviews, PausePreviewsWhilePlaying, ProxyBase, QueueTick,
+};
 use crate::ui::nav::{browse_link, Route};
 use dioxus::prelude::*;
 use std::collections::HashMap;
@@ -34,6 +37,7 @@ pub fn VideoCard(video: VideoSummary) -> Element {
     let hover_previews = use_context::<HoverPreviews>().0;
     let pause_previews_while_playing = use_context::<PausePreviewsWhilePlaying>().0;
     let hover_preview_volume = use_context::<HoverPreviewVolume>().0;
+    let proxy_base = use_context::<ProxyBase>().0;
     let navigator = use_navigator();
     let mut hovering = use_signal(|| false);
     let id = video.id.clone();
@@ -41,7 +45,15 @@ pub fn VideoCard(video: VideoSummary) -> Element {
         let _ = queue_tick();
         queue::is_queued(&id)
     };
-    let preview = video.preview_url.clone();
+    let preview = video.preview_url.clone().map(|u| {
+        let base = proxy_base();
+        let proxied = proxied_url(&base, &u);
+        if proxied.is_empty() {
+            u
+        } else {
+            proxied
+        }
+    });
     let has_preview = preview.as_ref().map(|p| !p.is_empty()).unwrap_or(false);
     let video_el_id = format!("preview-{}", video.id);
     let progress = watched_map().get(&id).copied();
