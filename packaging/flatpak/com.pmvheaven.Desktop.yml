@@ -29,23 +29,17 @@ modules:
   - name: xdotool
     buildsystem: simple
     build-commands:
-      - make libxdo.so WITHOUT_RPATH_FIX=1
+      # Official install puts libxdo.so* + libxdo.pc under PREFIX=/app.
+      - make PREFIX=/app WITHOUT_RPATH_FIX=1 libxdo.so libxdo.pc
+      - make PREFIX=/app WITHOUT_RPATH_FIX=1 installlib installheader installpc
       - |
         set -euo pipefail
-        mkdir -p /app/lib /app/include /app/lib/pkgconfig
-        cp -a libxdo.so* /app/lib/
-        install -Dm644 xdo.h /app/include/xdo.h
-        cat > /app/lib/pkgconfig/libxdo.pc <<'EOF'
-        prefix=/app
-        exec_prefix=${prefix}
-        libdir=${exec_prefix}/lib
-        includedir=${prefix}/include
-        Name: libxdo
-        Description: X11 automation library (from xdotool)
-        Version: 3.20211022.1
-        Libs: -L${libdir} -lxdo
-        Cflags: -I${includedir}
-        EOF
+        echo "libxdo files in /app/lib:"
+        ls -la /app/lib/libxdo* /app/lib/pkgconfig/libxdo.pc
+        export PKG_CONFIG_PATH="/app/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+        pkg-config --exists libxdo
+        pkg-config --libs libxdo
+        pkg-config --cflags libxdo
     sources:
       - type: archive
         url: https://github.com/jordansissel/xdotool/archive/refs/tags/v3.20211022.1.tar.gz
@@ -56,10 +50,21 @@ modules:
     build-options:
       append-path: /usr/lib/sdk/rust-stable/bin
       append-pkg-config-path: /app/lib/pkgconfig
+      append-ld-library-path: /app/lib
       env:
         CARGO_HOME: /run/build/pmvheaven/cargo
         CARGO_NET_OFFLINE: "true"
+        # Ensure rustc/cc can resolve -lxdo from the xdotool module.
+        PKG_CONFIG_PATH: /app/lib/pkgconfig
+        LIBRARY_PATH: /app/lib
+        LD_LIBRARY_PATH: /app/lib
+        RUSTFLAGS: "-C link-arg=-L/app/lib"
     build-commands:
+      - |
+        set -euo pipefail
+        echo "pre-cargo libxdo check:"
+        ls -la /app/lib/libxdo* 
+        pkg-config --libs libxdo
       - cargo --offline fetch --manifest-path Cargo.toml --verbose
       - cargo --offline build --release --verbose
       - install -Dm755 target/release/pmvheaven /app/bin/pmvheaven
