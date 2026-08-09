@@ -43,7 +43,7 @@ cargo run
 
 ## Linux Flatpak (supported distribution)
 
-Released Linux builds are **Flatpak** (`com.pmvheaven.Desktop`), built inside `org.gnome.Sdk` so WebKitGTK and GStreamer match the runtime on every distro (Arch/CachyOS included). Flatpak uses `cargo --offline build` (no `dioxus-cli` in the sandbox); UI assets are embedded via Dioxus `asset!()`.
+Released Linux builds are **Flatpak** (`com.pmvheaven.Desktop`), built inside `org.gnome.Sdk` so WebKitGTK and GStreamer match the runtime on every distro (Arch/CachyOS included). Flatpak uses `cargo --offline build` (no `dioxus-cli`); Linux UI CSS/logo are embedded in the binary because `asset!()` needs the dx linker. Windows keeps `asset!()` via `dx bundle` / NSIS.
 
 ### One-time: Flathub + GNOME Platform 50
 

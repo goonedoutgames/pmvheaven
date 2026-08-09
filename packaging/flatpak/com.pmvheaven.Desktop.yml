@@ -67,7 +67,8 @@ modules:
         echo "pre-build checks:"
         ls -la /app/lib/libxdo*
         pkg-config --libs libxdo
-        # UI assets come from Dioxus `asset!()` (embedded by manganis at compile time).
+        # UI CSS/logo are embedded for Linux (cargo Flatpak has no dx asset linker).
+        # Windows NSIS still uses dx bundle + asset!().
         cargo --offline fetch --manifest-path Cargo.toml --verbose
         cargo --offline build --release --verbose
         install -Dm755 target/release/pmvheaven /app/bin/pmvheaven
