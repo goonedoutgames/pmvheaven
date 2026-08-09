@@ -49,7 +49,13 @@ pub fn VideoCard(video: VideoSummary) -> Element {
         let base = proxy_base();
         let proxied = proxied_url(&base, &u);
         if proxied.is_empty() {
-            u
+            // Linux WebKit: don't hit the CDN directly (hotlink fails / flicker).
+            // Windows WebView2: keep prior fallback to the raw URL.
+            if cfg!(target_os = "linux") {
+                String::new()
+            } else {
+                u
+            }
         } else {
             proxied
         }

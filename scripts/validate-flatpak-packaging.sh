@@ -22,6 +22,12 @@ grep -q 'app-id: com.pmvheaven.Desktop' packaging/flatpak/com.pmvheaven.Desktop.
 grep -q 'runtime: org.gnome.Platform' packaging/flatpak/com.pmvheaven.Desktop.yml
 grep -q 'cargo-sources.json' packaging/flatpak/com.pmvheaven.Desktop.yml
 grep -q 'org.freedesktop.Sdk.Extension.rust-stable' packaging/flatpak/com.pmvheaven.Desktop.yml
+grep -q 'cargo --offline build --release' packaging/flatpak/com.pmvheaven.Desktop.yml
+# Flatpak must not depend on dioxus-cli (prebuilt dx --version fails in the SDK).
+if grep -q 'name: dioxus-cli' packaging/flatpak/com.pmvheaven.Desktop.yml; then
+  echo "manifest still has dioxus-cli module; use cargo-only build" >&2
+  exit 1
+fi
 
 echo "==> Desktop Exec"
 grep -q '^Exec=pmvheaven$' packaging/flatpak/com.pmvheaven.Desktop.desktop

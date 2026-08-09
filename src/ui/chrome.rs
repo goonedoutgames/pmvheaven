@@ -3,10 +3,92 @@ use crate::services::player;
 use crate::ui::ctx::StartAt;
 use dioxus::prelude::*;
 
+// Windows keeps Dioxus `asset!()` so NSIS/`dx bundle` stays unchanged.
+// Linux embeds data URLs so Flatpak can build with cargo only (no dx).
+#[cfg(not(target_os = "linux"))]
 pub const LOGO: Asset = asset!("/assets/logo.png");
+#[cfg(not(target_os = "linux"))]
 pub const SEXY_CLOSE: Asset = asset!("/assets/sexy_close.svg");
+#[cfg(not(target_os = "linux"))]
 pub const MAIN_CSS: Asset = asset!("/assets/main.css");
+#[cfg(not(target_os = "linux"))]
 pub const HLS_JS: Asset = asset!("/assets/hls.min.js");
+
+#[cfg(target_os = "linux")]
+mod linux_assets {
+    use base64::engine::general_purpose::STANDARD;
+    use base64::Engine;
+    use std::sync::LazyLock;
+
+    fn data_url(mime: &str, bytes: &[u8]) -> String {
+        format!("data:{mime};base64,{}", STANDARD.encode(bytes))
+    }
+
+    pub static LOGO: LazyLock<String> =
+        LazyLock::new(|| data_url("image/png", include_bytes!("../../assets/logo.png")));
+    pub static SEXY_CLOSE: LazyLock<String> = LazyLock::new(|| {
+        data_url("image/svg+xml", include_bytes!("../../assets/sexy_close.svg"))
+    });
+    pub static MAIN_CSS: LazyLock<String> =
+        LazyLock::new(|| data_url("text/css", include_bytes!("../../assets/main.css")));
+    pub static HLS_JS: LazyLock<String> = LazyLock::new(|| {
+        data_url("text/javascript", include_bytes!("../../assets/hls.min.js"))
+    });
+}
+#[cfg(target_os = "linux")]
+pub use linux_assets::{HLS_JS, LOGO, MAIN_CSS, SEXY_CLOSE};
+
+/// Stylesheet + hls.js — Asset on Windows, data-URL on Linux.
+pub fn head_assets() -> Element {
+    #[cfg(not(target_os = "linux"))]
+    {
+        rsx! {
+            document::Link { rel: "stylesheet", href: MAIN_CSS }
+            document::Script { src: HLS_JS }
+        }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        rsx! {
+            document::Link { rel: "stylesheet", href: MAIN_CSS.as_str() }
+            document::Script { src: HLS_JS.as_str() }
+        }
+    }
+}
+
+#[component]
+pub fn BrandLogo(#[props(default)] class: String, #[props(default)] style: String) -> Element {
+    #[cfg(not(target_os = "linux"))]
+    {
+        if style.is_empty() {
+            rsx! { img { class: "{class}", src: LOGO, alt: "PMVHeaven" } }
+        } else {
+            rsx! { img { class: "{class}", src: LOGO, alt: "PMVHeaven", style: "{style}" } }
+        }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let src = LOGO.as_str();
+        if style.is_empty() {
+            rsx! { img { class: "{class}", src: "{src}", alt: "PMVHeaven" } }
+        } else {
+            rsx! { img { class: "{class}", src: "{src}", alt: "PMVHeaven", style: "{style}" } }
+        }
+    }
+}
+
+#[component]
+fn SexyCloseIcon() -> Element {
+    #[cfg(not(target_os = "linux"))]
+    {
+        rsx! { img { src: SEXY_CLOSE, alt: "Close" } }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let src = SEXY_CLOSE.as_str();
+        rsx! { img { src: "{src}", alt: "Close" } }
+    }
+}
 
 #[component]
 pub fn WindowChrome() -> Element {
@@ -17,7 +99,7 @@ pub fn WindowChrome() -> Element {
     rsx! {
         header { class: "titlebar",
             div { class: "titlebar-brand",
-                img { src: LOGO, alt: "PMVHeaven" }
+                BrandLogo {}
                 span {
                     "PMV"
                     span { class: "accent", "Heaven" }
@@ -83,7 +165,7 @@ pub fn WindowChrome() -> Element {
                             dioxus::desktop::window().close();
                         });
                     },
-                    img { src: SEXY_CLOSE, alt: "Close" }
+                    SexyCloseIcon {}
                 }
             }
         }

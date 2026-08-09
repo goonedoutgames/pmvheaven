@@ -4,7 +4,7 @@ use crate::services::db::{get_setting, set_setting};
 use crate::services::pmv::{get_account_user, shared_client};
 use crate::services::repo::watched_progress_map;
 use crate::services::stream_proxy;
-use crate::ui::chrome::{MAIN_CSS, HLS_JS, WindowChrome};
+use crate::ui::chrome::{head_assets, WindowChrome};
 use crate::ui::ctx::{
     HoverPreviewVolume, HoverPreviews, PausePreviewsWhilePlaying, PlayerFs, PlayerQueueH,
     PlayerRailW, ProxyBase, QueueOpen, QueueTick, StartAt,
@@ -92,8 +92,7 @@ pub fn App() -> Element {
     });
 
     rsx! {
-        document::Link { rel: "stylesheet", href: MAIN_CSS }
-        document::Script { src: HLS_JS }
+        {head_assets()}
         div { id: "main", class: "{main_class}",
             WindowChrome {}
             if show_legacy() {

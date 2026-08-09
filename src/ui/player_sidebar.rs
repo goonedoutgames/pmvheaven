@@ -107,9 +107,23 @@ pub fn PlayerSidebar() -> Element {
     // Quality changes go through window.__pmvApplyQuality (no full rebind).
     use_effect(move || {
         let id = playing_id();
-        if id.is_empty() {
-            return;
-        }
+        // Linux: wait for the media proxy (empty base → empty URLs → WebKit flicker).
+        // Windows: unchanged — bind on id change only (proxy via peek).
+        #[cfg(target_os = "linux")]
+        let proxy = {
+            let proxy = proxy_base();
+            if id.is_empty() || proxy.is_empty() {
+                return;
+            }
+            proxy
+        };
+        #[cfg(not(target_os = "linux"))]
+        let proxy = {
+            if id.is_empty() {
+                return;
+            }
+            proxy_base.peek().clone()
+        };
         let resume = *start_at.peek();
         let (file_src, hls_src, hint_ar, thumb) = now_playing
             .peek()
@@ -122,7 +136,7 @@ pub fn PlayerSidebar() -> Element {
                 let file = if raw_file.is_empty() || file_is_playlist {
                     String::new()
                 } else {
-                    proxied_url(&proxy_base.peek(), &raw_file)
+                    proxied_url(&proxy, &raw_file)
                 };
                 let hls = p
                     .hls_master_playlist_url
@@ -132,7 +146,7 @@ pub fn PlayerSidebar() -> Element {
                         // Some API payloads put the master playlist in videoUrl.
                         file_is_playlist.then_some(raw_file.as_str())
                     })
-                    .map(|u| proxied_url(&proxy_base.peek(), u))
+                    .map(|u| proxied_url(&proxy, u))
                     .filter(|u| !u.is_empty())
                     .unwrap_or_default();
                 let ar = if p.summary.aspect_ratio > 0.0 {
@@ -144,16 +158,44 @@ pub fn PlayerSidebar() -> Element {
                 (file, hls, ar, thumb)
             })
             .unwrap_or((String::new(), String::new(), 16.0 / 9.0, String::new()));
+        #[cfg(target_os = "linux")]
+        if file_src.is_empty() && hls_src.is_empty() {
+            return;
+        }
         LAST_POS_MS.store((resume * 1000.0) as u64, Ordering::Relaxed);
         // WebKitGTK (Linux) MSE/hls.js is flaky — prefer progressive on Auto there.
         // Windows WebView2 handles HLS well; keep HLS-first on non-Linux.
         let prefer_progressive_on_auto = cfg!(target_os = "linux");
+        // Linux-only: one-shot fallback + early same-bind short-circuit (WebKit flicker).
+        let linux_bind_fix = cfg!(target_os = "linux");
         spawn(async move {
             tokio::time::sleep(std::time::Duration::from_millis(60)).await;
             let _ = document::eval(&format!(
                 r#"
                 const el = document.getElementById('pmv-player');
                 if (!el) return 'no-el';
+
+                const fileSrc = {file_src:?};
+                const hlsSrc = {hls_src:?};
+                const resume = {resume};
+                const preferProgressiveOnAuto = {prefer_progressive_on_auto};
+                const linuxBindFix = {linux_bind_fix};
+                const qNow = window.__pmvQuality || 'auto';
+                const preferFile = (qNow === 'original') || !hlsSrc
+                  || (!!fileSrc && (qNow === 'auto') && preferProgressiveOnAuto);
+                const bindKey = (preferFile ? 'file:' : 'hls:') + (preferFile ? fileSrc : hlsSrc);
+
+                // Linux: skip poster/controls reset when already on this source.
+                if (linuxBindFix && el.dataset.boundSrc === bindKey) {{
+                  if (window.__hls) {{
+                    try {{
+                      const applyQ = window.__pmvApplyQuality;
+                      if (typeof applyQ === 'function') applyQ(window.__pmvQuality || 'auto');
+                    }} catch (e) {{}}
+                  }}
+                  return 'same';
+                }}
+
                 el.dataset.vid = {id:?};
                 el.setAttribute('controlsList', 'nofullscreen nodownload noremoteplayback');
                 try {{ el.disablePictureInPicture = true; }} catch (e) {{}}
@@ -242,9 +284,6 @@ pub fn PlayerSidebar() -> Element {
                   el.addEventListener('error', revealFrame, {{ once: true }});
                 }}
 
-                const resume = {resume};
-                const fileSrc = {file_src:?};
-                const hlsSrc = {hls_src:?};
                 window.__pmvResumePending = resume > 1;
                 window.__pmvSeeking = false;
                 window.__pmvFileSrc = fileSrc;
@@ -286,14 +325,23 @@ pub fn PlayerSidebar() -> Element {
                   hls.loadLevel = best;
                 }};
 
-                const playFile = () => {{
+                // Linux: commit preferred bindKey up front so a one-shot fallback does
+                // not look like a rebind (null↔loading flicker on WebKitGTK).
+                // Windows: leave boundSrc to playFile/playHls as before.
+                if (linuxBindFix) el.dataset.boundSrc = bindKey;
+
+                const playFile = (allowFallback) => {{
                   destroyHls();
-                  if (!fileSrc) return 'no-file';
-                  el.dataset.boundSrc = 'file:' + fileSrc;
+                  if (!fileSrc) {{
+                    if (allowFallback && hlsSrc) return playHls(false);
+                    if (linuxBindFix) revealFrame();
+                    return 'no-file';
+                  }}
+                  if (!linuxBindFix) el.dataset.boundSrc = 'file:' + fileSrc;
                   el.src = resume > 1 ? (fileSrc + '#t=' + Math.floor(resume)) : fileSrc;
                   const onErr = () => {{
                     el.removeEventListener('error', onErr);
-                    if (hlsSrc) playHls();
+                    if (allowFallback && hlsSrc) playHls(linuxBindFix ? false : true);
                     else revealFrame();
                   }};
                   el.addEventListener('error', onErr, {{ once: true }});
@@ -302,16 +350,20 @@ pub fn PlayerSidebar() -> Element {
                   return 'file';
                 }};
 
-                const playHls = () => {{
-                  if (!hlsSrc) return playFile();
+                const playHls = (allowFallback) => {{
+                  if (!hlsSrc) {{
+                    if (allowFallback) return playFile(linuxBindFix ? false : true);
+                    if (linuxBindFix) revealFrame();
+                    return 'no-hls';
+                  }}
                   const start = () => {{
                     if (!(window.Hls && window.Hls.isSupported())) {{
-                      return playFile();
+                      return playFile(allowFallback);
                     }}
                     destroyHls();
                     el.removeAttribute('src');
                     try {{ el.load(); }} catch (e) {{}}
-                    el.dataset.boundSrc = 'hls:' + hlsSrc;
+                    if (!linuxBindFix) el.dataset.boundSrc = 'hls:' + hlsSrc;
                     const q = window.__pmvQuality || 'auto';
                     const hls = new window.Hls({{
                       enableWorker: true,
@@ -327,7 +379,9 @@ pub fn PlayerSidebar() -> Element {
                       if (fellBack) return;
                       fellBack = true;
                       destroyHls();
-                      playFile();
+                      if (allowFallback && fileSrc) playFile(linuxBindFix ? false : true);
+                      else if (linuxBindFix) revealFrame();
+                      else playFile(true);
                     }};
                     hls.loadSource(hlsSrc);
                     hls.attachMedia(el);
@@ -364,28 +418,35 @@ pub fn PlayerSidebar() -> Element {
 
                 window.__pmvApplyQuality = (q) => {{
                   window.__pmvQuality = q || 'auto';
-                  if (q === 'original') return playFile();
-                  if (window.__hls && window.__hls.levels && window.__hls.levels.length) {{
+                  if (!linuxBindFix) {{
+                    if (q === 'original') return playFile(true);
+                    if (window.__hls && window.__hls.levels && window.__hls.levels.length) {{
+                      applyQuality(window.__hls, q);
+                      return 'level';
+                    }}
+                    return playHls(true);
+                  }}
+                  const prefer = (q === 'original') || !hlsSrc
+                    || (!!fileSrc && (q === 'auto') && preferProgressiveOnAuto);
+                  const nextKey = (prefer ? 'file:' : 'hls:') + (prefer ? fileSrc : hlsSrc);
+                  if (!prefer && window.__hls && window.__hls.levels && window.__hls.levels.length) {{
                     applyQuality(window.__hls, q);
+                    el.dataset.boundSrc = nextKey;
                     return 'level';
                   }}
-                  return playHls();
+                  el.dataset.boundSrc = nextKey;
+                  if (prefer) return playFile(true);
+                  return playHls(true);
                 }};
 
-                const qNow = window.__pmvQuality || 'auto';
-                const preferProgressiveOnAuto = {prefer_progressive_on_auto};
-                // On Linux WebKitGTK, prefer progressive when present. Elsewhere (WebView2)
-                // keep HLS-first for Auto so Windows behavior stays unchanged.
-                const preferFile = (qNow === 'original') || !hlsSrc
-                  || (!!fileSrc && (qNow === 'auto') && preferProgressiveOnAuto);
-                const bindKey = (preferFile ? 'file:' : 'hls:') + (preferFile ? fileSrc : hlsSrc);
-                if (el.dataset.boundSrc === bindKey) {{
+                // Windows: same-bind check happens here (after poster setup), as before.
+                if (!linuxBindFix && el.dataset.boundSrc === bindKey) {{
                   if (window.__hls) applyQuality(window.__hls, window.__pmvQuality || 'auto');
                   return 'same';
                 }}
 
-                if (preferFile) playFile();
-                else playHls();
+                if (preferFile) playFile(true);
+                else playHls(true);
 
                 const snap = () => {{
                   if (!el.duration || el.duration < 1) return null;
