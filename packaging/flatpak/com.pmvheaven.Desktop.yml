@@ -30,12 +30,13 @@ finish-args:
   - --env=WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1
   # Prefer Wayland; Dioxus used to force x11 which breaks Flatpak without X11.
   - --env=GDK_BACKEND=wayland
+  # Asset resolver looks under lib/$DIOXUS_PRODUCT_NAME/assets on Linux.
+  - --env=DIOXUS_PRODUCT_NAME=pmvheaven
 modules:
   # muda (dioxus-desktop menus) links libxdo; not in the GNOME SDK by default.
   - name: xdotool
     buildsystem: simple
     build-commands:
-      # Official install puts libxdo.so* + libxdo.pc under PREFIX=/app.
       - make PREFIX=/app WITHOUT_RPATH_FIX=1 libxdo.so libxdo.pc
       - make PREFIX=/app WITHOUT_RPATH_FIX=1 installlib installheader installpc
       - |
@@ -60,20 +61,51 @@ modules:
       env:
         CARGO_HOME: /run/build/pmvheaven/cargo
         CARGO_NET_OFFLINE: "true"
-        # Ensure rustc/cc can resolve -lxdo from the xdotool module.
         PKG_CONFIG_PATH: /app/lib/pkgconfig
         LIBRARY_PATH: /app/lib
         LD_LIBRARY_PATH: /app/lib
         RUSTFLAGS: "-C link-arg=-L/app/lib"
+        DIOXUS_PRODUCT_NAME: pmvheaven
     build-commands:
       - |
         set -euo pipefail
-        echo "pre-cargo libxdo check:"
-        ls -la /app/lib/libxdo* 
+        echo "pre-build libxdo check:"
+        ls -la /app/lib/libxdo*
         pkg-config --libs libxdo
-      - cargo --offline fetch --manifest-path Cargo.toml --verbose
-      - cargo --offline build --release --verbose
-      - install -Dm755 target/release/pmvheaven /app/bin/pmvheaven
+        # Dioxus asset!() macros require `dx` as the linker/bundler. Plain
+        # `cargo build` leaves CSS/logo/hls.js pointing at missing paths.
+        install -Dm755 tools/dx /run/build/pmvheaven/bin/dx
+        export PATH="/run/build/pmvheaven/bin:/usr/lib/sdk/rust-stable/bin:$PATH"
+        dx --version
+        cargo --offline fetch --manifest-path Cargo.toml --verbose
+        dx build --platform desktop --release
+        BIN="$(find target/dx -type f -name pmvheaven -executable | head -n1 || true)"
+        if [[ -z "$BIN" ]]; then
+          BIN="$(find target -type f -name pmvheaven -executable ! -path '*/deps/*' | head -n1 || true)"
+        fi
+        test -n "$BIN"
+        echo "binary: $BIN"
+        install -Dm755 "$BIN" /app/bin/pmvheaven
+        # Linux asset root: <prefix>/lib/<product>/assets (see dioxus-asset-resolver).
+        ASSETS_SRC="$(find target/dx -type d -path '*/assets' | head -n1 || true)"
+        if [[ -z "$ASSETS_SRC" ]]; then
+          ASSETS_SRC="$(find . -type d -path '*/assets' ! -path './assets' ! -path './packaging/*' | head -n1 || true)"
+        fi
+        mkdir -p /app/lib/pmvheaven
+        if [[ -n "$ASSETS_SRC" && -d "$ASSETS_SRC" ]]; then
+          echo "assets from $ASSETS_SRC"
+          cp -a "$ASSETS_SRC" /app/lib/pmvheaven/
+        else
+          echo "WARNING: dx assets dir missing — falling back to source assets/"
+          mkdir -p /app/lib/pmvheaven/assets
+          cp -a assets/. /app/lib/pmvheaven/assets/
+        fi
+        # Also place next to the binary (fallback discovery).
+        mkdir -p /app/bin
+        ln -sfn ../lib/pmvheaven/assets /app/bin/assets || cp -a /app/lib/pmvheaven/assets /app/bin/assets
+        ls -la /app/bin/pmvheaven /app/lib/pmvheaven/assets | head -40
+        test -d /app/lib/pmvheaven/assets
+        test "$(find /app/lib/pmvheaven/assets -type f | wc -l)" -ge 1
       - install -Dm644 packaging/flatpak/com.pmvheaven.Desktop.desktop /app/share/applications/com.pmvheaven.Desktop.desktop
       - install -Dm644 packaging/flatpak/com.pmvheaven.Desktop.metainfo.xml /app/share/metainfo/com.pmvheaven.Desktop.metainfo.xml
       - install -Dm644 assets/app-icon-32.png /app/share/icons/hicolor/32x32/apps/com.pmvheaven.Desktop.png
@@ -81,6 +113,10 @@ modules:
       - install -Dm644 assets/app-icon-256.png /app/share/icons/hicolor/256x256/apps/com.pmvheaven.Desktop.png
       - install -Dm644 assets/app-icon-512.png /app/share/icons/hicolor/512x512/apps/com.pmvheaven.Desktop.png
     sources:
+      - type: archive
+        url: https://github.com/DioxusLabs/dioxus/releases/download/v0.7.9/dx-x86_64-unknown-linux-gnu.tar.gz
+        sha256: 3b132551b480bc96f938f9f0d37936ee1190f994977539dcc347eaf38540d005
+        dest: tools
       - type: dir
         path: ../..
         skip:

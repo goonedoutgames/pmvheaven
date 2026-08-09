@@ -109,6 +109,7 @@ jobs:
             librsvg2-dev patchelf libxdo-dev fuse wget file python3 \
             gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
             gstreamer1.0-plugins-bad gstreamer1.0-libav \
+            gstreamer1.0-plugins-ugly \
             gstreamer1.0-pulseaudio gstreamer1.0-alsa
           sudo apt-get install -y libfuse2t64 || sudo apt-get install -y libfuse2
           test -x /usr/lib/x86_64-linux-gnu/webkit2gtk-4.1/WebKitNetworkProcess

@@ -115,7 +115,14 @@ pub fn PlayerSidebar() -> Element {
             .peek()
             .as_ref()
             .map(|p| {
-                let file = p.video_url.clone();
+                // Always proxy media through the local Referer-injecting proxy.
+                // Direct CDN fetches from WebKit often fail (hotlink / auth), while
+                // API + thumbnails may still work — leaving a stuck poster, no controls.
+                let file = if p.video_url.is_empty() {
+                    String::new()
+                } else {
+                    proxied_url(&proxy_base.peek(), &p.video_url)
+                };
                 let hls = p
                     .hls_master_playlist_url
                     .as_deref()
@@ -224,6 +231,7 @@ pub fn PlayerSidebar() -> Element {
                 else {{
                   el.addEventListener('loadeddata', revealFrame, {{ once: true }});
                   el.addEventListener('playing', revealFrame, {{ once: true }});
+                  el.addEventListener('error', revealFrame, {{ once: true }});
                 }}
 
                 const resume = {resume};
@@ -350,7 +358,11 @@ pub fn PlayerSidebar() -> Element {
                   return playHls();
                 }};
 
-                const preferFile = (window.__pmvQuality === 'original') || !hlsSrc;
+                const qNow = window.__pmvQuality || 'auto';
+                // Prefer progressive when present: WebKitGTK MSE/hls.js is often flaky,
+                // and a stuck poster with controls=false looks like "no video element".
+                const preferFile = (qNow === 'original') || !hlsSrc
+                  || (!!fileSrc && (qNow === 'auto'));
                 const bindKey = (preferFile ? 'file:' : 'hls:') + (preferFile ? fileSrc : hlsSrc);
                 if (el.dataset.boundSrc === bindKey) {{
                   if (window.__hls) applyQuality(window.__hls, window.__pmvQuality || 'auto');
