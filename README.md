@@ -64,12 +64,7 @@ flatpak run com.pmvheaven.Desktop
 
 If a GUI installer fails with “requires the runtime org.gnome.Platform/… which was not found”, run the Flathub/Platform commands above, then retry.
 
-**Already installed an older build that crashes on launch** (`cannot open display` / `readPIDFromPeer`)? That is WebKit’s inner sandbox inside Flatpak. Until you install a new build, override:
-
-```bash
-flatpak override --user --env=WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1 com.pmvheaven.Desktop
-flatpak run com.pmvheaven.Desktop
-```
+**Already installed an older build that crashes on launch** (`cannot open display` / `readPIDFromPeer`)? That needs a **new Flatpak build** — Dioxus was forcing `GDK_BACKEND=x11` while Flatpak often has no X11 display. Overrides alone cannot fix it. Install the latest CI/release artifact after it finishes building.
 
 App data lives under the Flatpak sandbox, e.g.
 `~/.var/app/com.pmvheaven.Desktop/data/com.pmvheaven.desktop/`.

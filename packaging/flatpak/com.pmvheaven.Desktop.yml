@@ -28,6 +28,8 @@ finish-args:
   # "readPIDFromPeer: Unexpected short read from PID socket"). Outer Flatpak
   # sandbox still applies. See WebKitGTK BubblewrapLauncher / glibc memfd issues.
   - --env=WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1
+  # Prefer Wayland; Dioxus used to force x11 which breaks Flatpak without X11.
+  - --env=GDK_BACKEND=wayland
 modules:
   # muda (dioxus-desktop menus) links libxdo; not in the GNOME SDK by default.
   - name: xdotool

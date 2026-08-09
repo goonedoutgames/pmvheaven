@@ -75,6 +75,14 @@ fn main() {
                     </style>"#
             .into(),
         );
+    // Dioxus defaults to disable_dma_buf_on_wayland=true, which forces
+    // GDK_BACKEND=x11. Flatpak often has Wayland only (DISPLAY unset) →
+    // WebKitWebProcess "cannot open display" + readPIDFromPeer crash.
+    // Keep native Wayland; PMV_GFX still controls DMABUF via linux_gfx.
+    #[cfg(target_os = "linux")]
+    {
+        cfg = cfg.with_disable_dma_buf_on_wayland(false);
+    }
     if let Some(icon) = window_icon() {
         cfg = cfg.with_icon(icon);
     }
