@@ -1,0 +1,83 @@
+# Flatpak manifest — build entirely inside org.gnome.Sdk so WebKitGTK +
+# GStreamer come from the runtime (works on Arch/CachyOS/Fedora/Ubuntu alike).
+#
+# Generate offline crate sources first:
+#   ./scripts/gen-cargo-sources.sh
+#
+# Local build:
+#   flatpak-builder --user --install --force-clean build-dir \
+#     packaging/flatpak/com.pmvheaven.Desktop.yml
+
+app-id: com.pmvheaven.Desktop
+runtime: org.gnome.Platform
+runtime-version: "48"
+sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: pmvheaven
+finish-args:
+  - --share=ipc
+  - --share=network
+  - --socket=fallback-x11
+  - --socket=wayland
+  - --socket=pulseaudio
+  - --device=dri
+  - --filesystem=xdg-download
+  - --talk-name=org.freedesktop.Notifications
+modules:
+  # muda (dioxus-desktop menus) links libxdo; not in the GNOME SDK by default.
+  - name: xdotool
+    buildsystem: simple
+    build-commands:
+      - make libxdo.so WITHOUT_RPATH_FIX=1
+      - |
+        set -euo pipefail
+        mkdir -p /app/lib /app/include /app/lib/pkgconfig
+        cp -a libxdo.so* /app/lib/
+        install -Dm644 xdo.h /app/include/xdo.h
+        cat > /app/lib/pkgconfig/libxdo.pc <<'EOF'
+        prefix=/app
+        exec_prefix=${prefix}
+        libdir=${exec_prefix}/lib
+        includedir=${prefix}/include
+        Name: libxdo
+        Description: X11 automation library (from xdotool)
+        Version: 3.20211022.1
+        Libs: -L${libdir} -lxdo
+        Cflags: -I${includedir}
+        EOF
+    sources:
+      - type: archive
+        url: https://github.com/jordansissel/xdotool/archive/refs/tags/v3.20211022.1.tar.gz
+        sha256: 82b15a944a5e82fee15e0f6116bd9f642bc3d0bb6989fc0ca5ad9dfe35de0847
+
+  - name: pmvheaven
+    buildsystem: simple
+    build-options:
+      append-path: /usr/lib/sdk/rust-stable/bin
+      append-pkg-config-path: /app/lib/pkgconfig
+      env:
+        CARGO_HOME: /run/build/pmvheaven/cargo
+        CARGO_NET_OFFLINE: "true"
+    build-commands:
+      - cargo --offline fetch --manifest-path Cargo.toml --verbose
+      - cargo --offline build --release --verbose
+      - install -Dm755 target/release/pmvheaven /app/bin/pmvheaven
+      - install -Dm644 packaging/flatpak/com.pmvheaven.Desktop.desktop /app/share/applications/com.pmvheaven.Desktop.desktop
+      - install -Dm644 packaging/flatpak/com.pmvheaven.Desktop.metainfo.xml /app/share/metainfo/com.pmvheaven.Desktop.metainfo.xml
+      - install -Dm644 assets/app-icon-32.png /app/share/icons/hicolor/32x32/apps/com.pmvheaven.Desktop.png
+      - install -Dm644 assets/app-icon-128.png /app/share/icons/hicolor/128x128/apps/com.pmvheaven.Desktop.png
+      - install -Dm644 assets/app-icon-256.png /app/share/icons/hicolor/256x256/apps/com.pmvheaven.Desktop.png
+      - install -Dm644 assets/app-icon-512.png /app/share/icons/hicolor/512x512/apps/com.pmvheaven.Desktop.png
+    sources:
+      - type: dir
+        path: ../..
+        skip:
+          - .git
+          - target
+          - .dioxus
+          - dist
+          - .flatpak-builder
+          - build-dir
+          - squashfs-root
+      - cargo-sources.json

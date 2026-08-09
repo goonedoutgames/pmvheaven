@@ -18,6 +18,12 @@ squashfs-root/
 .env
 temp-creds.tmp.conf
 
+# Flatpak / AppImage build trees
+.flatpak-builder/
+build-dir/
+packaging/flatpak/cargo-sources.json
+*.flatpak
+
 # OS / editor
 .DS_Store
 **/*.rs.bk

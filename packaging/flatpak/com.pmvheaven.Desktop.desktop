@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=PMVHeaven
+GenericName=PMVHaven Client
+Comment=Ad-free PMVHaven desktop client
+Exec=pmvheaven
+Icon=com.pmvheaven.Desktop
+Terminal=false
+Categories=AudioVideo;Player;Entertainment;
+Keywords=pmv;video;pmvhaven;
+StartupNotify=true

@@ -16,12 +16,18 @@ Ad-free desktop client for [PMVHaven](https://pmvhaven.com), rewritten in **Rust
 
 ## Requirements
 
+### End users (Linux)
+
+- [Flatpak](https://flatpak.org/) + Flathub remote (for `org.gnome.Platform`)
+
+### Developers
+
 - Rust stable (1.85+)
 - [Dioxus CLI](https://dioxuslabs.com/learn/0.7/getting_started): `cargo install dioxus-cli`
 - **Linux:** WebKitGTK (`webkit2gtk`), GTK3, and `xdotool` (provides `libxdo` — required to link Dioxus desktop)
 - **Windows:** WebView2 runtime
 
-On Arch/CachyOS:
+On Arch/CachyOS (dev native builds):
 
 ```bash
 sudo pacman -S --needed webkit2gtk-4.1 gtk3 xdotool base-devel
@@ -35,7 +41,37 @@ dx serve --platform desktop
 cargo run
 ```
 
-## Bundle
+## Linux Flatpak (supported distribution)
+
+Released Linux builds are **Flatpak** (`com.pmvheaven.Desktop`), built inside `org.gnome.Sdk` so WebKitGTK and GStreamer match the runtime on every distro (Arch/CachyOS included).
+
+Install from a GitHub Release asset:
+
+```bash
+flatpak install --user ./PMVHeaven-<version>-x86_64.flatpak
+flatpak run com.pmvheaven.Desktop
+```
+
+App data lives under the Flatpak sandbox, e.g.
+`~/.var/app/com.pmvheaven.Desktop/data/com.pmvheaven.desktop/`.
+
+### Local Flatpak build
+
+```bash
+./scripts/gen-cargo-sources.sh
+flatpak-builder --user --install --force-clean build-dir \
+  packaging/flatpak/com.pmvheaven.Desktop.yml
+flatpak run com.pmvheaven.Desktop
+```
+
+### Packaging test CI
+
+Push to branch `ci/linux-packaging` (or run **Linux packaging** via workflow_dispatch) to build:
+
+- **Flatpak** (primary) — download and smoke-test on your machine
+- **AppImage** (comparison only, `*-COMPARE.AppImage`) — not supported for release
+
+## Bundle (developers)
 
 ```bash
 dx bundle --platform desktop --release
@@ -43,15 +79,7 @@ dx bundle --platform desktop --release
 
 **Windows** (CI publishes these): NSIS installer under `target/dx/…` (e.g. `*-setup.exe`).
 
-**Linux:** no CI AppImage — build from source on your machine:
-
-```bash
-dx bundle --platform desktop --release
-# optional Wayland/AppImage post-process if you produced an AppImage locally:
-./scripts/fix-appimage-wayland.sh
-```
-
-No Node runtime is bundled.
+**Linux AppImage** is optional/comparison-only after `dx bundle`; post-process with `./scripts/fix-appimage-wayland.sh`. Prefer Flatpak for anything you ship.
 
 ## Releases (CI)
 
@@ -59,37 +87,27 @@ Pushes to `main` run [`.github/workflows/release.yml`](.github/workflows/release
 
 1. Read semver from `Cargo.toml` (`2.2.7` → tag `v2.2.7`)
 2. Skip if that GitHub Release already exists (bump the Cargo version to cut a new one)
-3. Build **Windows NSIS `.exe` installer** only
-4. Publish a GitHub Release with that artifact
-
-Linux users: install deps above, then `dx serve` / `dx bundle` from source.
+3. Build **Linux Flatpak** + **Windows NSIS `.exe`**
+4. Publish a GitHub Release with both artifacts
 
 Manual re-run: Actions → **Release** → **Run workflow** (optionally force recreate).
 
-On launch the app checks `goonedoutgames/pmvheaven` for a newer release and offers a download link when one is available.
+On launch the app checks `goonedoutgames/pmvheaven` for a newer release and offers a download link when one is available (Linux prefers `.flatpak`).
 
-### Linux graphics A/B (`PMV_GFX`)
+### Linux graphics A/B (`PMV_GFX`) — native / AppImage only
 
-When you build a Linux AppImage locally, after `dx bundle` run:
-
-```bash
-./scripts/fix-appimage-wayland.sh
-```
-
-That script bundles WebKit helpers + GStreamer plugins and relocates hardcoded Ubuntu paths so the AppImage can launch on Arch/CachyOS and other non-Debian hosts.
+Inside Flatpak these workarounds are skipped. For `dx serve` or a local AppImage on rolling Wayland:
 
 | Mode | Command | Behavior |
 |------|---------|----------|
-| `wayland` (default) | `PMV_GFX=wayland ./…AppImage` | System Wayland preload, DMABUF **on**, AppDir GST plugins |
+| `wayland` (default) | `PMV_GFX=wayland ./…AppImage` | System Wayland preload, DMABUF **on** |
 | `dmabuf-off` | `PMV_GFX=dmabuf-off ./…AppImage` | Preload + `WEBKIT_DISABLE_DMABUF_RENDERER=1` |
 | `soft` | `PMV_GFX=soft ./…AppImage` | Preload + DMABUF + compositing off (slowest) |
 | `stock` | `PMV_GFX=stock ./…AppImage` | No fixes (baseline / protocol-error repro) |
 
-Startup prints which mode is active on stderr. Native (`dx serve`) installs still prefer host GST plugins for VAAPI/NVDEC when available.
-
 ## Data
 
-App data lives under the OS data dir for identifier `com.pmvheaven.desktop`
+Native/`dx serve` app data lives under the OS data dir for identifier `com.pmvheaven.desktop`
 (e.g. `~/.local/share/com.pmvheaven.desktop` on Linux):
 
 | File | Purpose |
@@ -97,6 +115,8 @@ App data lives under the OS data dir for identifier `com.pmvheaven.desktop`
 | `pmvheaven_v2.db` | v2 SQLite (account, videos, history, favorites, …) |
 | `queue.json` | Ephemeral play queue |
 | `pmvheaven.db` | **Legacy v1 only** — if present on first launch, the app prompts to delete it |
+
+Flatpak uses the same relative layout under `~/.var/app/com.pmvheaven.Desktop/data/`.
 
 This is a **breaking** rewrite: v1 databases are not migrated.
 
@@ -111,6 +131,7 @@ src/
   services/   # db, crypto, pmv client, sync, queue, stream proxy
   ui/         # chrome, router, pages
 assets/       # logo.png, sexy_close.svg, hls.min.js, main.css
+packaging/flatpak/  # Flatpak manifest + desktop/metainfo
 public/       # logo.png + sexy_close.svg (brand copies)
 ```
 

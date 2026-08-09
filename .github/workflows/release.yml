@@ -1,9 +1,8 @@
 name: Release
 
-# Builds the Windows NSIS installer and creates a GitHub Release tagged from
-# Cargo.toml's version (e.g. 2.2.5 → v2.2.5).
+# Builds Linux Flatpak + Windows NSIS installer, then creates a GitHub Release
+# tagged from Cargo.toml's version (e.g. 2.2.7 → v2.2.7).
 #
-# Linux is not CI-built — build from source locally (see README).
 # Skips when that tag/release already exists so docs-only pushes to main are cheap.
 # Bump `[package].version` in Cargo.toml to cut a new release.
 
@@ -73,6 +72,55 @@ jobs:
             echo "should_release=true" >> "$GITHUB_OUTPUT"
           fi
 
+  build-linux:
+    name: Build Linux Flatpak
+    needs: version
+    if: needs.version.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-48
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate cargo-sources.json
+        run: |
+          set -euo pipefail
+          chmod +x scripts/gen-cargo-sources.sh
+          if ! command -v uv >/dev/null 2>&1; then
+            curl -LsSf https://astral.sh/uv/install.sh | sh
+          fi
+          export PATH="$HOME/.local/bin:$PATH"
+          ./scripts/gen-cargo-sources.sh
+          test -s packaging/flatpak/cargo-sources.json
+
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          bundle: PMVHeaven-${{ needs.version.outputs.version }}-x86_64.flatpak
+          manifest-path: packaging/flatpak/com.pmvheaven.Desktop.yml
+          cache-key: flatpak-release-${{ github.sha }}
+          upload-artifact: false
+
+      - name: Stage Flatpak artifact
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.version.outputs.version }}"
+          mkdir -p dist
+          SRC="$(find . -maxdepth 4 -type f -name '*.flatpak' | head -n1)"
+          if [[ -z "$SRC" ]]; then
+            echo "No Flatpak bundle produced" >&2
+            find . -name '*.flatpak' 2>/dev/null | head -20 >&2 || true
+            exit 1
+          fi
+          cp "$SRC" "dist/PMVHeaven-${VERSION}-x86_64.flatpak"
+          ls -lh dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-flatpak
+          path: dist/*.flatpak
+          if-no-files-found: error
+
   build-windows:
     name: Build Windows installer
     needs: version
@@ -108,7 +156,6 @@ jobs:
           set -euo pipefail
           VERSION="${{ needs.version.outputs.version }}"
           mkdir -p dist
-          # NSIS usually produces *setup*.exe under the bundle tree.
           SRC="$(find target/dx -type f \( -iname '*setup*.exe' -o -iname '*.exe' \) ! -path '*/deps/*' | head -n1)"
           if [[ -z "$SRC" ]]; then
             echo "No Windows installer exe produced" >&2
@@ -127,7 +174,7 @@ jobs:
 
   release:
     name: Publish GitHub Release
-    needs: [version, build-windows]
+    needs: [version, build-linux, build-windows]
     if: needs.version.outputs.should_release == 'true'
     runs-on: ubuntu-latest
     steps:
@@ -144,9 +191,9 @@ jobs:
         run: |
           set -euo pipefail
           find artifacts -type f -print
-          mapfile -t FILES < <(find artifacts -type f -name '*.exe' | sort)
-          if [[ ${#FILES[@]} -lt 1 ]]; then
-            echo "No release assets downloaded" >&2
+          mapfile -t FILES < <(find artifacts -type f \( -name '*.flatpak' -o -name '*.exe' \) | sort)
+          if [[ ${#FILES[@]} -lt 2 ]]; then
+            echo "Expected Flatpak + Windows exe; found ${#FILES[@]}" >&2
             exit 1
           fi
           {
@@ -163,16 +210,22 @@ jobs:
           FORCE: ${{ github.event_name == 'workflow_dispatch' && inputs.force || false }}
         run: |
           set -euo pipefail
-          mapfile -t FILES < <(find artifacts -type f -name '*.exe' | sort)
+          mapfile -t FILES < <(find artifacts -type f \( -name '*.flatpak' -o -name '*.exe' \) | sort)
 
           NOTES=$(printf '%s\n' \
             "## PMVHeaven ${VERSION}" \
             "" \
             "Desktop builds for this release:" \
             "" \
+            "- **Linux:** \`PMVHeaven-${VERSION}-x86_64.flatpak\` (install with Flatpak)" \
             "- **Windows:** \`PMVHeaven-${VERSION}-x86_64-setup.exe\`" \
             "" \
-            "Linux is not published from CI — build from source (see README)." \
+            "### Linux install" \
+            "" \
+            '```bash' \
+            "flatpak install --user ./PMVHeaven-${VERSION}-x86_64.flatpak" \
+            "flatpak run com.pmvheaven.Desktop" \
+            '```' \
             "" \
             "Source version is taken from \`Cargo.toml\`.")
 

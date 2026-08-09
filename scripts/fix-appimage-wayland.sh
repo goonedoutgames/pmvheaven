@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # Post-process a Dioxus AppImage for portable Linux hosts.
 #
+# COMPARISON / DEV ONLY — released Linux builds are Flatpak
+# (packaging/flatpak/com.pmvheaven.Desktop.yml). Keep this script for the
+# linux-packaging CI AppImage job and local experiments; do not treat
+# AppImage as the supported distribution format.
+#
 # 1. Bundles WebKitGTK helper processes (Network/Web/GPU) into the AppDir
 # 2. Byte-patches libwebkit2gtk hardcoded helper paths → /tmp/.pmvheaven-wk
 # 3. Strips bundled libwayland* so rolling compositors use the system ABI

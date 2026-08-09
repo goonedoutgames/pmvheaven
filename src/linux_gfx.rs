@@ -1,11 +1,12 @@
-//! Linux WebKitGTK / Wayland graphics helpers for AppImage + rolling distros.
+//! Linux WebKitGTK / Wayland graphics helpers.
 //!
-//! AppImages often ship an older `libwayland-client` that triggers protocol errors
-//! against bleeding-edge compositors. Prefer preloading the **system** Wayland
-//! client so DMA-BUF / GPU compositing can stay enabled (much better for video).
+//! **Released Linux builds are Flatpak** (`com.pmvheaven.Desktop`) — WebKit and
+//! GStreamer come from `org.gnome.Platform`, so these AppImage/host ABI workarounds
+//! are not needed inside the sandbox (`FLATPAK_ID` is set and we no-op).
 //!
-//! Also bias GStreamer toward host hardware codecs (VAAPI / NVDEC) when the
-//! AppImage's bundled plugin set is incomplete.
+//! For native `dx serve` / local AppImage comparison builds on rolling Wayland
+//! hosts (Arch/CachyOS), prefer preloading the **system** Wayland client and
+//! (for non-AppImage) host GStreamer plugins when available.
 //!
 //! Compare modes with `PMV_GFX`:
 //! - `wayland` (default) — system libwayland preload, DMABUF left on
@@ -23,6 +24,12 @@ const PRELOADED_FLAG: &str = "PMV_WAYLAND_PRELOADED";
 
 /// Call before any WebKit / GTK init.
 pub fn prepare() {
+    // Flatpak runtime already provides matching WebKit / GStreamer / Wayland.
+    if env::var_os("FLATPAK_ID").is_some() {
+        eprintln!("[pmvheaven] Flatpak runtime — skip host Wayland/GST workarounds");
+        return;
+    }
+
     let mode = env::var("PMV_GFX").unwrap_or_else(|_| "wayland".into());
     apply_gpu_defaults(&mode);
     apply_webkit_flags(&mode);

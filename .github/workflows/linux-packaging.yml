@@ -1,0 +1,160 @@
+name: Linux packaging
+
+# Artifact-only Flatpak (primary) + AppImage (comparison). No GitHub Release.
+# Push to ci/linux-packaging or run workflow_dispatch to test on CachyOS/Arch.
+
+on:
+  push:
+    branches: [ci/linux-packaging]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linux-packaging-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  DX_VERSION: "0.7.9"
+  NO_STRIP: "true"
+
+jobs:
+  version:
+    name: Resolve version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read Cargo.toml version
+        id: meta
+        run: |
+          set -euo pipefail
+          VERSION="$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n1)"
+          test -n "$VERSION"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+  flatpak:
+    name: Flatpak (primary)
+    needs: version
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-48
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Static packaging checks
+        run: |
+          set -euo pipefail
+          chmod +x scripts/validate-flatpak-packaging.sh scripts/gen-cargo-sources.sh
+          if ! command -v uv >/dev/null 2>&1; then
+            curl -LsSf https://astral.sh/uv/install.sh | sh
+          fi
+          export PATH="$HOME/.local/bin:$PATH"
+          ./scripts/validate-flatpak-packaging.sh
+
+      - name: Generate cargo-sources.json
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.local/bin:$PATH"
+          test -s packaging/flatpak/cargo-sources.json
+
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          bundle: PMVHeaven-${{ needs.version.outputs.version }}-x86_64.flatpak
+          manifest-path: packaging/flatpak/com.pmvheaven.Desktop.yml
+          cache-key: flatpak-${{ github.sha }}
+          upload-artifact: false
+
+      - name: Stage Flatpak artifact
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.version.outputs.version }}"
+          mkdir -p dist
+          SRC="$(find . -maxdepth 3 -type f -name '*.flatpak' | head -n1)"
+          test -n "$SRC"
+          cp "$SRC" "dist/PMVHeaven-${VERSION}-x86_64.flatpak"
+          ls -lh dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-flatpak
+          path: dist/*.flatpak
+          if-no-files-found: error
+
+  appimage:
+    name: AppImage (comparison only)
+    needs: version
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: linux-appimage-compare
+
+      - name: Install Linux desktop deps
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential pkg-config \
+            libwebkit2gtk-4.1-dev libwebkit2gtk-4.1-0 \
+            libgtk-3-dev libayatana-appindicator3-dev \
+            librsvg2-dev patchelf libxdo-dev fuse wget file python3 \
+            gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
+            gstreamer1.0-plugins-bad gstreamer1.0-libav \
+            gstreamer1.0-pulseaudio gstreamer1.0-alsa
+          sudo apt-get install -y libfuse2t64 || sudo apt-get install -y libfuse2
+          test -x /usr/lib/x86_64-linux-gnu/webkit2gtk-4.1/WebKitNetworkProcess
+          test -f /usr/lib/x86_64-linux-gnu/gstreamer-1.0/libgstplayback.so
+          wget -q "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage" \
+            -O /usr/local/bin/appimagetool
+          chmod +x /usr/local/bin/appimagetool
+
+      - uses: cargo-bins/cargo-binstall@main
+
+      - name: Install dioxus-cli
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          cargo binstall "dioxus-cli@${DX_VERSION}" -y --force --disable-strategies compile
+          dx --version
+
+      - name: Bundle AppImage
+        run: dx bundle --platform desktop --release --package-types appimage
+
+      - name: Post-process AppImage
+        run: |
+          set -euo pipefail
+          chmod +x scripts/fix-appimage-wayland.sh scripts/relocate-webkit.py
+          SRC="$(find target/dx -type f -name '*.AppImage' | head -n1)"
+          test -n "$SRC"
+          ./scripts/fix-appimage-wayland.sh "$SRC"
+
+      - name: Stage AppImage artifact
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.version.outputs.version }}"
+          mkdir -p dist
+          SRC="$(find target/dx -type f -name '*-portable.AppImage' | head -n1 || true)"
+          if [[ -z "$SRC" ]]; then
+            SRC="$(find target/dx -type f -name '*.AppImage' | head -n1)"
+          fi
+          test -n "$SRC"
+          DEST="dist/PMVHeaven-${VERSION}-x86_64-COMPARE.AppImage"
+          cp "$SRC" "$DEST"
+          chmod +x "$DEST"
+          ls -lh dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-appimage-compare
+          path: dist/*.AppImage
+          if-no-files-found: error

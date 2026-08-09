@@ -119,7 +119,8 @@ fn prefer_asset(assets: &[GhAsset]) -> Option<&GhAsset> {
     {
         assets
             .iter()
-            .find(|a| a.name.ends_with(".AppImage"))
+            .find(|a| a.name.ends_with(".flatpak"))
+            .or_else(|| assets.iter().find(|a| a.name.ends_with(".AppImage")))
             .or_else(|| assets.iter().find(|a| a.name.contains("linux")))
     }
     #[cfg(target_os = "windows")]
