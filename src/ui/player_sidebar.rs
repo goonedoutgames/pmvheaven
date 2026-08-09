@@ -145,6 +145,9 @@ pub fn PlayerSidebar() -> Element {
             })
             .unwrap_or((String::new(), String::new(), 16.0 / 9.0, String::new()));
         LAST_POS_MS.store((resume * 1000.0) as u64, Ordering::Relaxed);
+        // WebKitGTK (Linux) MSE/hls.js is flaky — prefer progressive on Auto there.
+        // Windows WebView2 handles HLS well; keep HLS-first on non-Linux.
+        let prefer_progressive_on_auto = cfg!(target_os = "linux");
         spawn(async move {
             tokio::time::sleep(std::time::Duration::from_millis(60)).await;
             let _ = document::eval(&format!(
@@ -370,10 +373,11 @@ pub fn PlayerSidebar() -> Element {
                 }};
 
                 const qNow = window.__pmvQuality || 'auto';
-                // Prefer progressive when present: WebKitGTK MSE/hls.js is often flaky,
-                // and a stuck poster with controls=false looks like "no video element".
+                const preferProgressiveOnAuto = {prefer_progressive_on_auto};
+                // On Linux WebKitGTK, prefer progressive when present. Elsewhere (WebView2)
+                // keep HLS-first for Auto so Windows behavior stays unchanged.
                 const preferFile = (qNow === 'original') || !hlsSrc
-                  || (!!fileSrc && (qNow === 'auto'));
+                  || (!!fileSrc && (qNow === 'auto') && preferProgressiveOnAuto);
                 const bindKey = (preferFile ? 'file:' : 'hls:') + (preferFile ? fileSrc : hlsSrc);
                 if (el.dataset.boundSrc === bindKey) {{
                   if (window.__hls) applyQuality(window.__hls, window.__pmvQuality || 'auto');
